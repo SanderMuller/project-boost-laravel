@@ -1,0 +1,17 @@
+# Sidecar tag manifest for laravel/boost's bundled skills.
+#
+# Maps skill name → space-delimited tag string. Read by
+# LaravelBoostTagManifest. Tags here apply only when the upstream skill's
+# own metadata.boost-tags is absent — frontmatter wins.
+#
+# Tag vocabulary should align with boost-core's convention (`Tag` enum +
+# common strings: `php`, `frontend`, `database`, `laravel`, ...). Project
+# `withTags()` filters skills via the subset rule (skillTags ⊆ projectTags).
+
+folio-routing: laravel folio
+fluxui-development: laravel frontend
+pennant-development: laravel feature-flags
+volt-development: laravel livewire frontend
+wayfinder-development: laravel frontend
+mcp-development: laravel mcp
+laravel-best-practices: laravel

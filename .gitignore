@@ -1,0 +1,54 @@
+# Dependencies
+composer.lock
+/vendor
+/node_modules
+auth.json
+
+# Logs
+npm-debug.log
+yarn-error.log
+storage/logs
+
+# Caches
+.cache
+/build
+
+# IDE Helper
+_ide_helper.php
+_ide_helper_models.php
+.phpstorm.meta.php
+
+# Editors
+/.idea
+/.fleet
+/.vscode
+/.cursor
+
+# Claude Code
+.claude/scheduled_tasks.lock
+
+# AI agent dirs scaffolded by repo-init / boost-core sync — regenerated, not tracked.
+.agents/skills/
+.claude/skills/
+.codex/
+.cursor/skills/
+.gemini/
+.github/skills/
+.github/prompts/
+.junie/skills/
+.kiro/skills/
+.opencode/skills/
+AGENTS.md
+CLAUDE.md
+GEMINI.md
+
+# Misc
+phpstan.neon
+/docs
+/coverage
+
+# Pre-release drafts (notes flow to GitHub release body, never to git history)
+/internal
+
+# Autoresearch artifacts (benchmarks, progress logs, patches)
+/autoresearch
