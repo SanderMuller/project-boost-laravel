@@ -19,14 +19,21 @@ function rmFixtureRoot(string $path): void
     if (! is_dir($path)) {
         return;
     }
+
     $entries = scandir($path);
     if ($entries === false) {
         return;
     }
+
     foreach ($entries as $entry) {
-        if ($entry === '.' || $entry === '..') {
+        if ($entry === '.') {
             continue;
         }
+
+        if ($entry === '..') {
+            continue;
+        }
+
         $full = $path . '/' . $entry;
         if (is_dir($full) && ! is_link($full)) {
             rmFixtureRoot($full);
@@ -34,6 +41,7 @@ function rmFixtureRoot(string $path): void
             @unlink($full);
         }
     }
+
     @rmdir($path);
 }
 
@@ -50,8 +58,7 @@ test('discovers SKILL.md and SKILL.blade.php under <pkg>/skill/<name>/ when a Bl
         writeSkill($root, 'laravel', 'foo-skill', "---\nname: foo-skill\ndescription: F.\n---\nbody");
         writeSkill($root, 'folio', 'bar-skill', "---\nname: bar-skill\ndescription: B.\n---\nbody", 'blade.php');
 
-        $fakeBlade = new class implements SkillRenderer
-        {
+        $fakeBlade = new class implements SkillRenderer {
             /** @return list<string> */
             public function extensions(): array
             {
@@ -64,7 +71,7 @@ test('discovers SKILL.md and SKILL.blade.php under <pkg>/skill/<name>/ when a Bl
             }
         };
 
-        $reader = new LaravelBoostAssetReader($root, new LaravelBoostTagManifest, bladeRenderer: $fakeBlade);
+        $reader = new LaravelBoostAssetReader($root, new LaravelBoostTagManifest(), bladeRenderer: $fakeBlade);
         $names = array_map(fn (Skill $s) => $s->name, $reader->readSkills());
 
         sort($names);
@@ -80,7 +87,7 @@ test('silently skips Blade skills when no renderer is wired (matches boost-core 
         writeSkill($root, 'laravel', 'foo-skill', "---\nname: foo-skill\n---\nbody");
         writeSkill($root, 'folio', 'bar-skill', "---\nname: bar-skill\n---\nbody", 'blade.php');
 
-        $reader = new LaravelBoostAssetReader($root, new LaravelBoostTagManifest);
+        $reader = new LaravelBoostAssetReader($root, new LaravelBoostTagManifest());
         $names = array_map(fn (Skill $s) => $s->name, $reader->readSkills());
 
         expect($names)->toBe(['foo-skill']);
@@ -94,8 +101,7 @@ test('records render failure in renderErrors() and skips the offending skill', f
     try {
         writeSkill($root, 'folio', 'broken', "---\nname: broken\n---\nbody", 'blade.php');
 
-        $throwingRenderer = new class implements SkillRenderer
-        {
+        $throwingRenderer = new class implements SkillRenderer {
             /** @return list<string> */
             public function extensions(): array
             {
@@ -108,7 +114,7 @@ test('records render failure in renderErrors() and skips the offending skill', f
             }
         };
 
-        $reader = new LaravelBoostAssetReader($root, new LaravelBoostTagManifest, bladeRenderer: $throwingRenderer);
+        $reader = new LaravelBoostAssetReader($root, new LaravelBoostTagManifest(), bladeRenderer: $throwingRenderer);
         $skills = $reader->readSkills();
 
         expect($skills)->toBeEmpty()
@@ -159,7 +165,7 @@ test('sourceVendor stamped as laravel/boost', function (): void {
     try {
         writeSkill($root, 'foo', 'any-skill', "---\nname: any-skill\n---\nbody");
 
-        $reader = new LaravelBoostAssetReader($root, new LaravelBoostTagManifest);
+        $reader = new LaravelBoostAssetReader($root, new LaravelBoostTagManifest());
         $skill = $reader->readSkills()[0];
 
         expect($skill->sourceVendor)->toBe('laravel/boost')
@@ -171,7 +177,7 @@ test('sourceVendor stamped as laravel/boost', function (): void {
 });
 
 test('returns empty list when laravel/boost asset root does not exist', function (): void {
-    $reader = new LaravelBoostAssetReader('/nonexistent/path/anywhere', new LaravelBoostTagManifest);
+    $reader = new LaravelBoostAssetReader('/nonexistent/path/anywhere', new LaravelBoostTagManifest());
 
     expect($reader->readSkills())
         ->toBeEmpty();

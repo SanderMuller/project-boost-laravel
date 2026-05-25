@@ -40,6 +40,7 @@ final readonly class LaravelBoostTagManifest
             if (! is_string($skill)) {
                 continue;
             }
+
             if (! is_string($raw)) {
                 continue;
             }
@@ -48,6 +49,7 @@ final readonly class LaravelBoostTagManifest
             if ($parts === false) {
                 continue;
             }
+
             $tags = array_values(array_filter($parts, static fn (string $t): bool => $t !== ''));
             $normalized[$skill] = array_values(array_unique($tags));
         }
