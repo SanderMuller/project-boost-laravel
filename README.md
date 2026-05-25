@@ -40,6 +40,9 @@ The wrapper:
 > [!WARNING]
 > If you run `php artisan boost:install` **without** `--mcp` (its interactive default), laravel/boost's `GuidelineWriter` and `SkillWriter` will run alongside this package — both will write to `CLAUDE.md` and `.{agent}/skills/`, racing each other. Always go through `project-boost:install` or pass `--mcp` explicitly.
 
+> [!NOTE]
+> The wrapper still inherits laravel/boost's interactive `multiselect` prompts for integrations (cloud / sail / nightwatch) and agents — `--mcp` only short-circuits the feature picker, not these. Requires a TTY. Selecting an integration like `cloud` re-engages laravel/boost's per-integration writer (the parallel-writer warning above applies to those too). For CI / non-TTY, write `.mcp.json` directly or pipe the prompt answers.
+
 ## `boost.php`
 
 Minimal:
@@ -84,7 +87,7 @@ The full vocabulary is open — `vendor/bin/boost tags` lists every tag the inst
 | `project-boost:install` | Wraps `boost:install --mcp` (laravel/boost owns MCP) + runs `project-boost:sync`. Recommended entry point. |
 | `project-boost:install --no-sync` | MCP only; skip the sync. Useful when you want to inspect the MCP config before fan-out. |
 | `project-boost:sync` | Discover + render + tag-filter + boost-core fan-out. Run after `composer install` or when you edit `boost.php`. |
-| `project-boost:sync --dry-run` | Show what would land without writing. Adds `--show-untagged` for the untagged-skill set. |
+| `project-boost:sync --dry-run` | Preview the full SyncEngine pipeline (laravel/boost + host + scanned vendors + remote skills) in check mode. Requires `boost.php`. Add `--show-untagged` to also print the injection-set discovery tables. |
 
 ## Auto-sync on `composer install`
 
@@ -103,7 +106,7 @@ Wire boost-core's `BoostAutoSync` callback to re-sync after every `composer inst
 }
 ```
 
-This only fires `vendor/bin/boost sync` (host + scanned vendors + remote skills). It does **not** invoke `project-boost:sync` — Laravel's artisan kernel doesn't exist at composer-script time. For laravel/boost-bundled skill changes, re-run `php artisan project-boost:sync` manually (or wire it into your deploy hook).
+This only fires `vendor/bin/boost sync` (host + scanned vendors + remote skills). It does **not** invoke `project-boost:sync` — Laravel's artisan kernel doesn't exist at composer-script time. The same asymmetry applies to the `composer sync-ai` script (which also wraps `vendor/bin/boost sync`): for laravel/boost-bundled skill changes, re-run `php artisan project-boost:sync` manually (or wire it into your deploy hook).
 
 ## Coexistence with `laravel/boost`
 
