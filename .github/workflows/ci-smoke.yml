@@ -1,0 +1,106 @@
+name: ci-smoke
+
+permissions:
+  contents: read
+
+on:
+  push:
+    paths:
+      - '**.php'
+      - 'composer.json'
+      - 'resources/boost/**'
+      - '.github/workflows/ci-smoke.yml'
+  pull_request:
+    paths:
+      - '**.php'
+      - 'composer.json'
+      - 'resources/boost/**'
+      - '.github/workflows/ci-smoke.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    name: Fresh-install sync smoke
+
+    steps:
+      - name: Checkout companion
+        uses: actions/checkout@v6
+        with:
+          path: companion
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          coverage: none
+
+      - name: Create fresh Laravel app
+        run: composer create-project laravel/laravel skeleton --no-interaction --prefer-dist
+
+      - name: Install companion from checkout into the app
+        working-directory: skeleton
+        run: |
+          composer config repositories.companion '{"type":"path","url":"../companion","options":{"symlink":false}}'
+          composer config minimum-stability dev
+          composer config prefer-stable true
+          composer require --dev "sandermuller/project-boost-laravel:*@dev" --no-interaction
+
+      - name: Write minimal boost.php
+        working-directory: skeleton
+        run: |
+          cat > boost.php <<'PHP'
+          <?php declare(strict_types=1);
+
+          use SanderMuller\BoostCore\Config\BoostConfig;
+          use SanderMuller\BoostCore\Enums\Agent;
+
+          return BoostConfig::configure()->withAgents([Agent::CLAUDE_CODE]);
+          PHP
+
+      - name: Run project-boost:sync
+        working-directory: skeleton
+        run: php artisan project-boost:sync
+
+      - name: Assert no Blade directives leaked into generated output
+        working-directory: skeleton
+        run: |
+          set -e
+          fail=0
+
+          # Bare @php opening directives (Blade-render didn't fire on a `.blade.php` skill).
+          # Excludes legitimate prose mentions like "@php artisan ...".
+          if grep -RnE '^@php$|^@php[[:space:]]*$' CLAUDE.md .claude/skills/ 2>/dev/null; then
+            echo "FAIL: bare @php Blade directive leaked into generated output"
+            fail=1
+          fi
+
+          # {{ $variable }} interpolation — should never appear post-render.
+          if grep -RnE '\{\{[[:space:]]*\$[a-zA-Z_]' CLAUDE.md .claude/skills/ 2>/dev/null; then
+            echo "FAIL: Blade {{ \$var }} interpolation leaked into generated output"
+            fail=1
+          fi
+
+          # @boostsnippet / @endboostsnippet should be expanded, never literal.
+          if grep -RnE '^@boostsnippet|^@endboostsnippet' CLAUDE.md .claude/skills/ 2>/dev/null; then
+            echo "FAIL: literal @boostsnippet directive leaked into generated output"
+            fail=1
+          fi
+
+          if [ "$fail" -ne 0 ]; then
+            exit 1
+          fi
+          echo "PASS: no Blade directives leaked into rendered output"
+
+      - name: Show generated file inventory (debug aid on failure)
+        if: always()
+        working-directory: skeleton
+        run: |
+          echo "--- CLAUDE.md (first 40 lines) ---"
+          head -40 CLAUDE.md || true
+          echo "--- .claude/skills/ tree ---"
+          find .claude/skills -type f 2>/dev/null | head -20 || true
