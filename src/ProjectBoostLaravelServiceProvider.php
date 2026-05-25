@@ -6,6 +6,7 @@ use Illuminate\Support\ServiceProvider;
 use Override;
 use SanderMuller\ProjectBoostLaravel\Console\InstallCommand;
 use SanderMuller\ProjectBoostLaravel\Console\SyncCommand;
+use SanderMuller\ProjectBoostLaravel\Console\WhereCommand;
 
 final class ProjectBoostLaravelServiceProvider extends ServiceProvider
 {
@@ -21,6 +22,7 @@ final class ProjectBoostLaravelServiceProvider extends ServiceProvider
             $this->commands([
                 SyncCommand::class,
                 InstallCommand::class,
+                WhereCommand::class,
             ]);
 
             $this->publishes([

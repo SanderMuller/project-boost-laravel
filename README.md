@@ -88,6 +88,7 @@ The full vocabulary is open — `vendor/bin/boost tags` lists every tag the inst
 | `project-boost:install --no-sync` | MCP only; skip the sync. Useful when you want to inspect the MCP config before fan-out. |
 | `project-boost:sync` | Discover + render + tag-filter + boost-core fan-out. Run after `composer install` or when you edit `boost.php`. |
 | `project-boost:sync --dry-run` | Preview the full SyncEngine pipeline (laravel/boost + host + scanned vendors + remote skills) in check mode. Requires `boost.php`. Add `--show-untagged` to also print the injection-set discovery tables. |
+| `project-boost:where` | List laravel/boost-bundled skills + guidelines this package injects, with tag-filter eligibility for the current `boost.php`. Symmetric with boost-core's `vendor/bin/boost where` (which covers host / scanned-vendor / remote origins but not the injection seam). |
 
 ## Auto-sync on `composer install`
 
@@ -183,6 +184,7 @@ Runs the Pest suite (unit only; the integration-with-real-laravel/boost smoke ru
 - **Roster-aware version selection** — currently lex-sort proxy for "highest major" (e.g. `pest/4` over `pest/3`). Switch to `Laravel\Roster\Roster::scan(base_path())` so the major matching the host's installed package wins deterministically.
 - **`suppress_upstream_writers` config flag** — service-provider rebind of `Laravel\Boost\Install\{GuidelineWriter, SkillWriter}` for users who accidentally run interactive `boost:install`. Inert today; the `--mcp` wrapper covers the happy path.
 - **CI smoke** — workflow that installs latest boost-core + laravel/boost and runs `project-boost:sync` against an empty Laravel skeleton, asserting no `@php` directives leak into output.
+- **Non-interactive `project-boost:install`** — write `.mcp.json` directly (or pipe selections) so the wrapper can run in CI / Docker without inheriting laravel/boost's TTY-bound `multiselect` prompts.
 
 ## License
 
