@@ -5,6 +5,7 @@ namespace SanderMuller\ProjectBoostLaravel\Console;
 use Illuminate\Console\Command;
 use SanderMuller\BoostCore\Skills\Guideline;
 use SanderMuller\BoostCore\Skills\Skill;
+use SanderMuller\BoostCore\Sync\EmitterAction;
 use SanderMuller\BoostCore\Sync\SyncEngine;
 use SanderMuller\BoostCore\Sync\SyncResult;
 use SanderMuller\BoostCore\Sync\WriteAction;
@@ -17,24 +18,26 @@ use SanderMuller\ProjectBoostLaravel\Rendering\BladeRenderer;
  * Sync laravel/boost-bundled skills through boost-core's SyncEngine.
  *
  * Pipeline:
- *  1. `LaravelBoostAssetReader` walks `vendor/laravel/boost/.ai/<pkg>/skill/<name>/`,
- *     attaches sidecar tags, returns `Skill[]` stamped with `sourceVendor=laravel/boost`.
- *     Both `.md` and `.blade.php` skills load — the Blade frontmatter parses
- *     fine; rendering happens later via BladeRenderer during the SyncEngine call.
+ *  1. `LaravelBoostAssetReader` + `LaravelBoostGuidelineReader` walk
+ *     `vendor/laravel/boost/.ai/`, attach sidecar tags, render `.blade.php`
+ *     via this package's `BladeRenderer` INSIDE the readers (so frontmatter
+ *     + body are already plain markdown by the time they leave discovery),
+ *     and return `Skill[]` / `Guideline[]` stamped with `sourceVendor=laravel/boost`.
  *  2. Dedupe versioned variants (e.g. `pest/3` and `pest/4` both ship a
  *     `pest-testing` skill) — pick the lex-last sourcePath. TODO: Roster-aware.
- *  3. Hand the resulting `Skill[]` to `SyncEngine::sync(injectedVendorSkills: ...)`
- *     under the vendor name `laravel/boost`, and append the package's
- *     `BladeRenderer` to the renderer registry via `extraSkillRenderers`.
- *     boost-core's per-sync dispatcher then renders the `.blade.php` skills
- *     through laravel/boost's RendersBladeGuidelines trait at agent fan-out.
+ *  3. Hand the resulting collections to
+ *     `SyncEngine::sync(injectedVendorSkills, injectedVendorGuidelines)`
+ *     under the vendor name `laravel/boost`. `extraSkillRenderers` is NOT
+ *     passed — Blade is already rendered in step 1, and registering a
+ *     duplicate `.blade.php` renderer would collide with a host project
+ *     that registered its own via `boost.php`'s `withSkillRenderers()`.
  */
 final class SyncCommand extends Command
 {
     /** @var string */
     protected $signature = 'project-boost:sync
-        {--dry-run : Discover + tag-filter only; do not invoke SyncEngine.}
-        {--show-untagged : Include untagged skills in the dry-run table.}';
+        {--dry-run : Preview the full SyncEngine pipeline (laravel/boost + host + scanned vendors + remote skills) in check mode.}
+        {--show-untagged : Also print the laravel/boost injection-set discovery tables (skills + guidelines, all rows including untagged).}';
 
     /** @var string */
     protected $description = 'Sync laravel/boost-bundled skills through boost-core (with Blade rendering + sidecar tags + project withTags filter).';
@@ -59,10 +62,11 @@ final class SyncCommand extends Command
         $allSkills = $skillReader->readSkills();
         $allGuidelines = $guidelineReader->readGuidelines();
 
+        // Empty laravel/boost discovery is not fatal — boost-core still has
+        // host `.ai/skills/`, scanned vendors, and remote skills to process.
+        // Just warn and fall through with empty injection arrays.
         if ($allSkills === [] && $allGuidelines === []) {
-            $this->warn('No laravel/boost skills or guidelines found at vendor/laravel/boost/.ai. Is laravel/boost installed?');
-
-            return self::SUCCESS;
+            $this->warn('No laravel/boost skills or guidelines found at vendor/laravel/boost/.ai. Is laravel/boost installed? Continuing with host + scanned-vendor + remote-skill discovery only.');
         }
 
         // Dedupe versioned variants within the same skill name.
@@ -138,6 +142,8 @@ final class SyncCommand extends Command
         $projectRoot = base_path();
         if (! is_file($projectRoot . '/boost.php')) {
             $this->error("No boost.php found at {$projectRoot}/boost.php.");
+            $this->line('Create one with at least:');
+            $this->line('  return BoostConfig::configure()->withAgents([Agent::CLAUDE_CODE]);');
 
             return self::FAILURE;
         }
@@ -178,11 +184,22 @@ final class SyncCommand extends Command
             $this->line("  <fg=green>{$written->action->value}</> {$written->relativePath}");
         }
 
+        foreach ($result->emitters as $emitter) {
+            $path = $emitter->relativePath ?? $emitter->fqcn;
+            $this->line("  <fg=cyan>emitter:{$emitter->action->value}</> {$path}");
+        }
+
         if ($result->hasErrors()) {
             $this->newLine();
             $this->error($checkOnly ? 'Errors during dry-run:' : 'Errors during sync:');
             foreach ($result->errors as $err) {
                 $this->line("  - {$err}");
+            }
+            foreach ($result->emitters as $emitter) {
+                if ($emitter->action !== EmitterAction::ERRORED) {
+                    continue;
+                }
+                $this->line(sprintf('  - emitter %s (%s): %s', $emitter->fqcn, $emitter->vendor, $emitter->reason ?? 'no reason given'));
             }
 
             return self::FAILURE;
@@ -198,28 +215,41 @@ final class SyncCommand extends Command
      * rsync-style breakdown — "N writes" by itself counted every event
      * (unchanged, skipped-symlink, would-*) which mislabelled idempotent
      * runs as having written N files. Split per action so the headline
-     * count matches what actually changed on disk.
+     * count matches what actually changed on disk. Emitter counts are
+     * surfaced separately because `SyncResult::writes` excludes them.
      */
     private function renderSummary(SyncResult $result, bool $checkOnly): string
     {
+        $emitterWrote = $result->countEmittersByAction($checkOnly ? EmitterAction::WOULD_WRITE : EmitterAction::WROTE);
+        $emitterSuffix = $result->emitters === []
+            ? ''
+            : sprintf(' · emitters(%s=%d, unchanged=%d, skipped=%d)',
+                $checkOnly ? 'would-write' : 'wrote',
+                $emitterWrote,
+                $result->countEmittersByAction(EmitterAction::UNCHANGED),
+                $result->countEmittersByAction(EmitterAction::SKIPPED) + $result->countEmittersByAction(EmitterAction::DISABLED),
+            );
+
         if ($checkOnly) {
             return sprintf(
-                '<fg=gray>Plan: %d total · would-write=%d · would-delete=%d · unchanged=%d · skipped-symlink=%d</>',
-                count($result->writes),
+                '<fg=gray>Plan · would-write=%d · would-delete=%d · unchanged=%d · skipped-symlink=%d (%d skill/guideline events)%s</>',
                 $result->countByAction(WriteAction::WOULD_WRITE),
                 $result->countByAction(WriteAction::WOULD_DELETE),
                 $result->countByAction(WriteAction::UNCHANGED),
                 $result->countByAction(WriteAction::SKIPPED_SYMLINK),
+                count($result->writes),
+                $emitterSuffix,
             );
         }
 
         return sprintf(
-            '<fg=gray>Sync complete · wrote=%d · deleted=%d · unchanged=%d · skipped-symlink=%d (%d events)</>',
+            '<fg=gray>Sync complete · wrote=%d · deleted=%d · unchanged=%d · skipped-symlink=%d (%d skill/guideline events)%s</>',
             $result->countByAction(WriteAction::WROTE),
             $result->countByAction(WriteAction::DELETED),
             $result->countByAction(WriteAction::UNCHANGED),
             $result->countByAction(WriteAction::SKIPPED_SYMLINK),
             count($result->writes),
+            $emitterSuffix,
         );
     }
 

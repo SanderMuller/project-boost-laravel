@@ -13,6 +13,14 @@ use Illuminate\Console\Command;
  *
  * Without this wrapper, running interactive `boost:install` re-introduces
  * the parallel-writer collision the companion package exists to avoid.
+ *
+ * Caveat: laravel/boost's installer still runs interactive `multiselect`
+ * prompts for integrations (cloud/sail/nightwatch) and agents even with
+ * `--mcp` — `--mcp` only short-circuits feature selection, not the
+ * downstream pickers. Requires a TTY; selecting an integration like
+ * `cloud` re-engages laravel/boost's writer for that integration's
+ * artifacts. CI / non-TTY use needs a different strategy (write
+ * `.mcp.json` directly, or wrap with input piped from `printf`).
  */
 final class InstallCommand extends Command
 {
