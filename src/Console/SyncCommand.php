@@ -189,6 +189,15 @@ final class SyncCommand extends Command
             $this->line("  <fg=cyan>emitter:{$emitter->action->value}</> {$path}");
         }
 
+        // Surface boost-core's canonical delete-attribution warning. Helper
+        // returns null when nothing was deleted or in check-mode (which lists
+        // would-delete inline already), so the call is unconditional.
+        $attribution = $result->renderDeleteAttribution();
+        if ($attribution !== null) {
+            $this->newLine();
+            $this->warn($attribution);
+        }
+
         if ($result->hasErrors()) {
             $this->newLine();
             $this->error($checkOnly ? 'Errors during dry-run:' : 'Errors during sync:');
