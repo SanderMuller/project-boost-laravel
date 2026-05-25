@@ -204,10 +204,12 @@ final class SyncCommand extends Command
             foreach ($result->errors as $err) {
                 $this->line("  - {$err}");
             }
+
             foreach ($result->emitters as $emitter) {
                 if ($emitter->action !== EmitterAction::ERRORED) {
                     continue;
                 }
+
                 $this->line(sprintf('  - emitter %s (%s): %s', $emitter->fqcn, $emitter->vendor, $emitter->reason ?? 'no reason given'));
             }
 
