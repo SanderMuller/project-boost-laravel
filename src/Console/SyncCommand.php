@@ -12,6 +12,7 @@ use SanderMuller\BoostCore\Sync\WriteAction;
 use SanderMuller\ProjectBoostLaravel\Discovery\LaravelBoostAssetReader;
 use SanderMuller\ProjectBoostLaravel\Discovery\LaravelBoostGuidelineReader;
 use SanderMuller\ProjectBoostLaravel\Discovery\LaravelBoostTagManifest;
+use SanderMuller\ProjectBoostLaravel\Discovery\VersionResolver;
 use SanderMuller\ProjectBoostLaravel\Rendering\BladeRenderer;
 
 /**
@@ -69,19 +70,15 @@ final class SyncCommand extends Command
             $this->warn('No laravel/boost skills or guidelines found at vendor/laravel/boost/.ai. Is laravel/boost installed? Continuing with host + scanned-vendor + remote-skill discovery only.');
         }
 
-        // Dedupe versioned variants within the same skill name.
-        // laravel/boost ships `.ai/pest/3/skill/pest-testing/SKILL.blade.php`
-        // AND `.ai/pest/4/skill/pest-testing/SKILL.blade.php` — same name,
-        // different paths. SkillResolver flags two same-name entries from
-        // the same vendor as a collision. Pick the lex-last sourcePath
-        // (rough proxy for "highest major"). TODO: Roster-aware selection.
-        usort($allSkills, static fn (Skill $a, Skill $b): int => strcmp($a->sourcePath, $b->sourcePath));
-        $byName = [];
-        foreach ($allSkills as $skill) {
-            $byName[$skill->name] = $skill;
-        }
-
-        $skills = array_values($byName);
+        // Dedupe versioned variants within the same skill name. laravel/boost
+        // ships e.g. `.ai/pest/3/skill/pest-testing/SKILL.blade.php` AND
+        // `.ai/pest/4/skill/pest-testing/SKILL.blade.php` — same name,
+        // different paths. SkillResolver in boost-core flags two same-name
+        // entries from the same vendor as a collision, so we must pick one
+        // before injection. VersionResolver uses laravel/roster to match
+        // the host's installed major when possible; falls back to lex-last
+        // sourcePath when Roster can't resolve.
+        $skills = VersionResolver::withHostRoster(base_path())->resolve($allSkills);
 
         // Guideline dedupe — same shape as skills. core.blade.php for a
         // package is one name; per-major guideline files include the major

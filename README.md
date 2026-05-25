@@ -181,7 +181,6 @@ Runs the Pest suite (unit only; the integration-with-real-laravel/boost smoke ru
 
 ## Roadmap
 
-- **Roster-aware version selection** — currently lex-sort proxy for "highest major" (e.g. `pest/4` over `pest/3`). Switch to `Laravel\Roster\Roster::scan(base_path())` so the major matching the host's installed package wins deterministically.
 - **`suppress_upstream_writers` config flag** — service-provider rebind of `Laravel\Boost\Install\{GuidelineWriter, SkillWriter}` for users who accidentally run interactive `boost:install`. Inert today; the `--mcp` wrapper covers the happy path.
 - **CI smoke** — workflow that installs latest boost-core + laravel/boost and runs `project-boost:sync` against an empty Laravel skeleton, asserting no `@php` directives leak into output.
 - **Non-interactive `project-boost:install`** — write `.mcp.json` directly (or pipe selections) so the wrapper can run in CI / Docker without inheriting laravel/boost's TTY-bound `multiselect` prompts.

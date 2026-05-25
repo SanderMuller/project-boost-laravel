@@ -10,6 +10,7 @@ use SanderMuller\BoostCore\Sync\WriteAction;
 use SanderMuller\ProjectBoostLaravel\Discovery\LaravelBoostAssetReader;
 use SanderMuller\ProjectBoostLaravel\Discovery\LaravelBoostGuidelineReader;
 use SanderMuller\ProjectBoostLaravel\Discovery\LaravelBoostTagManifest;
+use SanderMuller\ProjectBoostLaravel\Discovery\VersionResolver;
 use SanderMuller\ProjectBoostLaravel\Rendering\BladeRenderer;
 
 /**
@@ -62,7 +63,7 @@ final class WhereCommand extends Command
             bladeRenderer: $blade,
         );
 
-        $skills = $this->dedupedSkills($skillReader->readSkills());
+        $skills = VersionResolver::withHostRoster($projectRoot)->resolve($skillReader->readSkills());
         $guidelines = $this->dedupedGuidelines($guidelineReader->readGuidelines());
 
         if ($skills === [] && $guidelines === []) {
@@ -91,24 +92,6 @@ final class WhereCommand extends Command
         $this->line('<fg=gray>For host / scanned-vendor / remote-skill origins, run `vendor/bin/boost where`.</>');
 
         return self::SUCCESS;
-    }
-
-    /**
-     * Mirror SyncCommand's versioned-variant dedupe so the displayed set
-     * matches what live sync would inject.
-     *
-     * @param  list<Skill>  $allSkills
-     * @return list<Skill>
-     */
-    private function dedupedSkills(array $allSkills): array
-    {
-        usort($allSkills, static fn (Skill $a, Skill $b): int => strcmp($a->sourcePath, $b->sourcePath));
-        $byName = [];
-        foreach ($allSkills as $skill) {
-            $byName[$skill->name] = $skill;
-        }
-
-        return array_values($byName);
     }
 
     /**
@@ -149,9 +132,11 @@ final class WhereCommand extends Command
             if ($written->action !== WriteAction::WOULD_WRITE && $written->action !== WriteAction::UNCHANGED) {
                 continue;
             }
+
             if (preg_match('#/skills/([^/]+)/SKILL\.md$#', $written->relativePath, $matches) !== 1) {
                 continue;
             }
+
             $names[$matches[1]] = true;
         }
 
