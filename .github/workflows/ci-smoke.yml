@@ -73,15 +73,9 @@ jobs:
           fail=0
 
           # Bare @php opening directives (Blade-render didn't fire on a `.blade.php` skill).
-          # Excludes legitimate prose mentions like "@php artisan ...".
+          # Line-anchored so legitimate prose mentions like "@php artisan ..." don't false-positive.
           if grep -RnE '^@php$|^@php[[:space:]]*$' CLAUDE.md .claude/skills/ 2>/dev/null; then
             echo "FAIL: bare @php Blade directive leaked into generated output"
-            fail=1
-          fi
-
-          # {{ $variable }} interpolation — should never appear post-render.
-          if grep -RnE '\{\{[[:space:]]*\$[a-zA-Z_]' CLAUDE.md .claude/skills/ 2>/dev/null; then
-            echo "FAIL: Blade {{ \$var }} interpolation leaked into generated output"
             fail=1
           fi
 
@@ -90,6 +84,14 @@ jobs:
             echo "FAIL: literal @boostsnippet directive leaked into generated output"
             fail=1
           fi
+
+          # Note: NO check for `{{ $var }}` patterns. Blade's `@{{ ... }}`
+          # escape syntax intentionally renders to literal `{{ ... }}` so
+          # downstream tools (Livewire wire:* attrs, JS template engines)
+          # can consume mustaches the post-render markdown legitimately
+          # contains. A grep can't disambiguate that from a real leak.
+          # The two checks above are reliable: if Blade didn't render,
+          # `@php` and `@boostsnippet` would leak verbatim.
 
           if [ "$fail" -ne 0 ]; then
             exit 1
