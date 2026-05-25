@@ -76,7 +76,7 @@ The full vocabulary is open — `vendor/bin/boost tags` lists every tag the inst
 
 **Guidelines** — `vendor/laravel/boost/.ai/<pkg>/core.blade.php` + per-major variants → concatenated into `CLAUDE.md` / `AGENTS.md` / `GEMINI.md`.
 
-**Versioned variants** — when laravel/boost ships per-major directories (e.g. `pest/3/` + `pest/4/`), the highest version wins. (Currently a `lex-sort` proxy; Roster-aware selection is on the roadmap.)
+**Versioned variants** — when laravel/boost ships per-major directories (e.g. `pest/3/` + `pest/4/`), the variant matching your host's installed major wins. Resolution uses `Laravel\Roster\Roster::scan(base_path())` to detect the package's major; falls back to lex-last `sourcePath` when Roster can't resolve (package not in the Roster enum, host doesn't have the package installed, etc.).
 
 **Tag filter** — applied via boost-core's subset rule: a skill ships iff every tag in its `metadata.boost-tags` is among `withTags()`. laravel/boost skills have no `metadata.boost-tags` upstream; this package ships a [sidecar tag manifest](resources/boost/laravel-boost-tags.yaml) (`<skill-name>: <space-delimited tags>`) that layers tags in. Frontmatter wins when both are present.
 
@@ -177,7 +177,9 @@ Cache + offline behavior, `BOOST_GITHUB_TOKEN` for rate limits, `BOOST_REMOTE_ST
 composer test
 ```
 
-Runs the Pest suite (unit only; the integration-with-real-laravel/boost smoke runs via `vendor/bin/testbench project-boost:sync` in a CI environment with `vendor/laravel/boost/` populated).
+Runs the Pest suite (unit only).
+
+A dedicated `.github/workflows/ci-smoke.yml` covers the end-to-end install-and-sync path: it spins up a fresh `laravel/laravel` app, installs this package from the checkout, runs `project-boost:sync` against a minimal `boost.php`, and asserts no Blade directives (`@php`, `{{ $var }}`, `@boostsnippet`) leak into the generated `CLAUDE.md` / `.claude/skills/`. Triggered on any push or PR touching PHP source, `composer.json`, or `resources/boost/`.
 
 ## Roadmap
 
