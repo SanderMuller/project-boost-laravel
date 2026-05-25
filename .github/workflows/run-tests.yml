@@ -11,6 +11,8 @@ on:
       - 'phpunit.xml'
       - 'composer.json'
       - 'composer.lock'
+      - 'testbench.yaml'
+      - 'workbench/**'
   pull_request:
     paths:
       - '**.php'
@@ -18,6 +20,8 @@ on:
       - 'phpunit.xml'
       - 'composer.json'
       - 'composer.lock'
+      - 'testbench.yaml'
+      - 'workbench/**'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -32,11 +36,9 @@ jobs:
       matrix:
         include:
           # Floor — lowest supported combo (prefer-lowest)
-          - { php: '8.3', laravel: '11.*', testbench: '9.*',  stability: prefer-lowest }
+          - { php: '8.3', laravel: '12.*', testbench: '10.*', stability: prefer-lowest }
           # Ceiling — highest supported combo
           - { php: '8.4', laravel: '13.*', testbench: '11.*', stability: prefer-stable }
-          # Mid Laravel on PHP-ceiling
-          - { php: '8.4', laravel: '12.*', testbench: '10.*', stability: prefer-stable }
           # PHP-axis sanity: PHP 8.3 against highest Laravel + prefer-stable
           - { php: '8.3', laravel: '13.*', testbench: '11.*', stability: prefer-stable }
           # Stability-axis sanity: prefer-lowest at the ceiling
