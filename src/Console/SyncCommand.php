@@ -6,6 +6,8 @@ use Illuminate\Console\Command;
 use SanderMuller\BoostCore\Skills\Guideline;
 use SanderMuller\BoostCore\Skills\Skill;
 use SanderMuller\BoostCore\Sync\SyncEngine;
+use SanderMuller\BoostCore\Sync\SyncResult;
+use SanderMuller\BoostCore\Sync\WriteAction;
 use SanderMuller\ProjectBoostLaravel\Discovery\LaravelBoostAssetReader;
 use SanderMuller\ProjectBoostLaravel\Discovery\LaravelBoostGuidelineReader;
 use SanderMuller\ProjectBoostLaravel\Discovery\LaravelBoostTagManifest;
@@ -116,24 +118,69 @@ final class SyncCommand extends Command
             count($guidelines),
         ));
 
-        // BladeRenderer is used INSIDE the asset readers (above) since
-        // injected skills/guidelines bypass the file walker / dispatcher.
-        // We don't need extraSkillRenderers here unless the host also
-        // publishes raw .blade.php files under .ai/skills/ — rare; revisit
-        // if a user reports that case.
-        $result = SyncEngine::default()->sync(
+        $result = $this->invokeSyncEngine($projectRoot, $skills, $guidelines, checkOnly: false);
+
+        return $this->renderResult($result, checkOnly: false);
+    }
+
+    /**
+     * Dry-run runs the full SyncEngine pipeline in check mode so the planned
+     * write set is a faithful preview of live sync — including writes from
+     * boost-core's host/vendor/remote discovery, not just the laravel/boost
+     * injection set this command contributes. `--show-untagged` additionally
+     * surfaces the injection-side discovery tables for debugging.
+     *
+     * @param  list<Skill>  $skills
+     * @param  list<Guideline>  $guidelines
+     */
+    private function reportDryRun(array $skills, array $guidelines): int
+    {
+        $projectRoot = base_path();
+        if (! is_file($projectRoot . '/boost.php')) {
+            $this->error("No boost.php found at {$projectRoot}/boost.php.");
+
+            return self::FAILURE;
+        }
+
+        if ($this->option('show-untagged')) {
+            $this->renderInjectionTables($skills, $guidelines);
+        }
+
+        $this->newLine();
+        $this->info(sprintf(
+            'Planned writes (dry-run · %d laravel/boost skills + %d guidelines injected; full pipeline preview).',
+            count($skills),
+            count($guidelines),
+        ));
+
+        $result = $this->invokeSyncEngine($projectRoot, $skills, $guidelines, checkOnly: true);
+
+        return $this->renderResult($result, checkOnly: true);
+    }
+
+    /**
+     * @param  list<Skill>  $skills
+     * @param  list<Guideline>  $guidelines
+     */
+    private function invokeSyncEngine(string $projectRoot, array $skills, array $guidelines, bool $checkOnly): SyncResult
+    {
+        return SyncEngine::default()->sync(
             projectRoot: $projectRoot,
+            checkOnly: $checkOnly,
             injectedVendorSkills: ['laravel/boost' => $skills],
             injectedVendorGuidelines: ['laravel/boost' => $guidelines],
         );
+    }
 
+    private function renderResult(SyncResult $result, bool $checkOnly): int
+    {
         foreach ($result->writes as $written) {
             $this->line("  <fg=green>{$written->action->value}</> {$written->relativePath}");
         }
 
         if ($result->hasErrors()) {
             $this->newLine();
-            $this->error('Errors during sync:');
+            $this->error($checkOnly ? 'Errors during dry-run:' : 'Errors during sync:');
             foreach ($result->errors as $err) {
                 $this->line("  - {$err}");
             }
@@ -142,30 +189,52 @@ final class SyncCommand extends Command
         }
 
         $this->newLine();
-        $this->line(sprintf(
-            '<fg=gray>Sync complete · %d writes</>',
-            count($result->writes),
-        ));
+        $this->line($this->renderSummary($result, $checkOnly));
 
         return self::SUCCESS;
+    }
+
+    /**
+     * rsync-style breakdown — "N writes" by itself counted every event
+     * (unchanged, skipped-symlink, would-*) which mislabelled idempotent
+     * runs as having written N files. Split per action so the headline
+     * count matches what actually changed on disk.
+     */
+    private function renderSummary(SyncResult $result, bool $checkOnly): string
+    {
+        if ($checkOnly) {
+            return sprintf(
+                '<fg=gray>Plan: %d total · would-write=%d · would-delete=%d · unchanged=%d · skipped-symlink=%d</>',
+                count($result->writes),
+                $result->countByAction(WriteAction::WOULD_WRITE),
+                $result->countByAction(WriteAction::WOULD_DELETE),
+                $result->countByAction(WriteAction::UNCHANGED),
+                $result->countByAction(WriteAction::SKIPPED_SYMLINK),
+            );
+        }
+
+        return sprintf(
+            '<fg=gray>Sync complete · wrote=%d · deleted=%d · unchanged=%d · skipped-symlink=%d (%d events)</>',
+            $result->countByAction(WriteAction::WROTE),
+            $result->countByAction(WriteAction::DELETED),
+            $result->countByAction(WriteAction::UNCHANGED),
+            $result->countByAction(WriteAction::SKIPPED_SYMLINK),
+            count($result->writes),
+        );
     }
 
     /**
      * @param  list<Skill>  $skills
      * @param  list<Guideline>  $guidelines
      */
-    private function reportDryRun(array $skills, array $guidelines): int
+    private function renderInjectionTables(array $skills, array $guidelines): void
     {
         $this->newLine();
-        $this->line('<fg=cyan>Discovered laravel/boost skills (dry-run)</>');
+        $this->line('<fg=cyan>Discovered laravel/boost skills (injection set)</>');
 
         $rows = [];
         foreach ($skills as $skill) {
             $tags = $skill->tags === [] ? '<untagged>' : implode(' ', $skill->tags);
-            if (! $this->option('show-untagged') && $skill->tags === []) {
-                continue;
-            }
-
             $type = str_ends_with($skill->sourcePath, '.blade.php') ? 'blade' : 'md';
             $rows[] = [$skill->name, $type, $tags];
         }
@@ -175,15 +244,11 @@ final class SyncCommand extends Command
         }
 
         $this->newLine();
-        $this->line('<fg=cyan>Discovered laravel/boost guidelines (dry-run)</>');
+        $this->line('<fg=cyan>Discovered laravel/boost guidelines (injection set)</>');
 
         $gRows = [];
         foreach ($guidelines as $g) {
             $tags = $g->tags === [] ? '<untagged>' : implode(' ', $g->tags);
-            if (! $this->option('show-untagged') && $g->tags === []) {
-                continue;
-            }
-
             $gRows[] = [$g->name, $tags];
         }
 
@@ -192,7 +257,5 @@ final class SyncCommand extends Command
         }
 
         $this->line(sprintf('<fg=gray>%d skills · %d guidelines (after dedupe)</>', count($skills), count($guidelines)));
-
-        return self::SUCCESS;
     }
 }
