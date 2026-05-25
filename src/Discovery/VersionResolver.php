@@ -79,7 +79,7 @@ final readonly class VersionResolver
         $hostMajor = $this->lookupHostMajor($variants);
         if ($hostMajor !== null) {
             foreach ($variants as $variant) {
-                if ($this->extractMajor($variant->sourcePath) === $hostMajor) {
+                if ($this->extractMajor($this->normalize($variant->sourcePath)) === $hostMajor) {
                     return $variant;
                 }
             }
@@ -125,7 +125,7 @@ final readonly class VersionResolver
     {
         $packages = [];
         foreach ($variants as $variant) {
-            if (preg_match('#/\.ai/([^/]+)/\d+/skill/#', $variant->sourcePath, $matches) === 1) {
+            if (preg_match('#/\.ai/([^/]+)/\d+/skill/#', $this->normalize($variant->sourcePath), $matches) === 1) {
                 $packages[$matches[1]] = true;
             }
         }
@@ -139,10 +139,23 @@ final readonly class VersionResolver
 
     private function extractMajor(string $sourcePath): ?string
     {
-        if (preg_match('#/\.ai/[^/]+/(\d+)/skill/#', $sourcePath, $matches) === 1) {
+        if (preg_match('#/\.ai/[^/]+/(\d+)/skill/#', $this->normalize($sourcePath), $matches) === 1) {
             return $matches[1];
         }
 
         return null;
+    }
+
+    /**
+     * Normalize Windows-style backslash separators to forward slashes
+     * before regex matching. SplFileInfo on Windows emits native
+     * separators, which would otherwise silently bypass the
+     * Roster-resolution branch and fall through to lex-sort — and
+     * lex-sort still mis-orders `pest/10` vs `pest/3` once upstream
+     * ships double-digit majors.
+     */
+    private function normalize(string $sourcePath): string
+    {
+        return str_replace('\\', '/', $sourcePath);
     }
 }

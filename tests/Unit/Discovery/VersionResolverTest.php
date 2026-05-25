@@ -103,6 +103,25 @@ describe('VersionResolver', function (): void {
             ->toContain('/pest/4/');
     });
 
+    it('resolves Roster-aware on Windows-style backslash paths', function (): void {
+        // Regression: SplFileInfo on Windows emits backslash separators;
+        // the path regex must normalize before matching, otherwise the
+        // Roster branch is silently bypassed and lex-sort takes over.
+        $roster = makeRosterWithPackage(Packages::PEST, '3.5.2');
+        $resolver = new VersionResolver($roster);
+
+        $skills = [
+            makeSkill('pest-testing', 'C:\\app\\vendor\\laravel\\boost\\.ai\\pest\\3\\skill\\pest-testing\\SKILL.blade.php'),
+            makeSkill('pest-testing', 'C:\\app\\vendor\\laravel\\boost\\.ai\\pest\\4\\skill\\pest-testing\\SKILL.blade.php'),
+        ];
+
+        $resolved = $resolver->resolve($skills);
+
+        expect($resolved)->toHaveCount(1)
+            ->and($resolved[0]->sourcePath)
+            ->toContain('\\pest\\3\\');
+    });
+
     it('handles mixed single + multi-variant input', function (): void {
         $roster = makeRosterWithPackage(Packages::PEST, '4.1.0');
         $resolver = new VersionResolver($roster);

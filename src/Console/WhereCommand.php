@@ -6,6 +6,7 @@ use Illuminate\Console\Command;
 use SanderMuller\BoostCore\Skills\Guideline;
 use SanderMuller\BoostCore\Skills\Skill;
 use SanderMuller\BoostCore\Sync\SyncEngine;
+use SanderMuller\BoostCore\Sync\SyncResult;
 use SanderMuller\BoostCore\Sync\WriteAction;
 use SanderMuller\ProjectBoostLaravel\Discovery\LaravelBoostAssetReader;
 use SanderMuller\ProjectBoostLaravel\Discovery\LaravelBoostGuidelineReader;
@@ -72,10 +73,18 @@ final class WhereCommand extends Command
             return self::SUCCESS;
         }
 
-        $shippedNames = $this->shippedSkillNames($projectRoot, $skills, $guidelines);
+        $result = SyncEngine::default()->sync(
+            projectRoot: $projectRoot,
+            checkOnly: true,
+            injectedVendorSkills: ['laravel/boost' => $skills],
+            injectedVendorGuidelines: ['laravel/boost' => $guidelines],
+        );
 
-        $this->renderSkillsTable($skills, $shippedNames);
-        $this->renderGuidelinesTable($guidelines, $shippedNames);
+        $shippedNames = $this->shippedSkillNamesFromResult($result);
+        $shadowedBy = $this->shadowIndex($result);
+
+        $this->renderSkillsTable($skills, $shippedNames, $shadowedBy);
+        $this->renderGuidelinesTable($guidelines);
 
         $shippedCount = count(array_intersect(array_map(static fn (Skill $s): string => $s->name, $skills), $shippedNames));
         $filteredCount = count($skills) - $shippedCount;
@@ -109,24 +118,16 @@ final class WhereCommand extends Command
     }
 
     /**
-     * Run SyncEngine in check mode with the injected set; collect the
-     * skill names that would actually land in agent dirs (i.e. survived
-     * `withTags()` + collision resolution). Anything in the injection
-     * set but not in the would-write paths is tag-filtered out.
+     * Collect the skill names from a check-mode SyncResult that would
+     * actually land in agent dirs. Anything in the injection set but
+     * not in the would-write paths is either tag-filtered, host-shadowed,
+     * or collision-lost — disambiguated via `$result->hostShadows` in
+     * the renderer.
      *
-     * @param  list<Skill>  $skills
-     * @param  list<Guideline>  $guidelines
      * @return list<string>
      */
-    private function shippedSkillNames(string $projectRoot, array $skills, array $guidelines): array
+    private function shippedSkillNamesFromResult(SyncResult $result): array
     {
-        $result = SyncEngine::default()->sync(
-            projectRoot: $projectRoot,
-            checkOnly: true,
-            injectedVendorSkills: ['laravel/boost' => $skills],
-            injectedVendorGuidelines: ['laravel/boost' => $guidelines],
-        );
-
         $names = [];
         foreach ($result->writes as $written) {
             if ($written->action !== WriteAction::WOULD_WRITE && $written->action !== WriteAction::UNCHANGED) {
@@ -144,16 +145,35 @@ final class WhereCommand extends Command
     }
 
     /**
+     * Map of skill name → shadowing vendor, built from boost-core's
+     * `$result->hostShadows` (list of `{skill, shadowedVendor}` entries).
+     * Lets the status column attribute a non-shipping skill to a host
+     * override rather than mislabel it as `filtered (declare: …)`.
+     *
+     * @return array<string, string>
+     */
+    private function shadowIndex(SyncResult $result): array
+    {
+        $index = [];
+        foreach ($result->hostShadows as $shadow) {
+            $index[$shadow['skill']] = $shadow['shadowedVendor'];
+        }
+
+        return $index;
+    }
+
+    /**
      * @param  list<Skill>  $skills
      * @param  list<string>  $shippedNames
+     * @param  array<string, string>  $shadowedBy
      */
-    private function renderSkillsTable(array $skills, array $shippedNames): void
+    private function renderSkillsTable(array $skills, array $shippedNames, array $shadowedBy): void
     {
         if ($skills === []) {
             return;
         }
 
-        $shipped = array_flip($shippedNames);
+        $shipped = array_fill_keys($shippedNames, true);
 
         $this->newLine();
         $this->line('<fg=cyan>laravel/boost-injected skills</>');
@@ -162,9 +182,7 @@ final class WhereCommand extends Command
         foreach ($skills as $skill) {
             $type = str_ends_with($skill->sourcePath, '.blade.php') ? 'blade' : 'md';
             $tags = $skill->tags === [] ? '<untagged>' : implode(' ', $skill->tags);
-            $status = isset($shipped[$skill->name])
-                ? '<fg=green>ship</>'
-                : '<fg=yellow>filtered (declare: ' . $tags . ')</>';
+            $status = $this->renderStatus($skill, $shipped, $shadowedBy, $tags);
             $rows[] = [$skill->name, $type, $tags, $status];
         }
 
@@ -172,16 +190,43 @@ final class WhereCommand extends Command
     }
 
     /**
-     * @param  list<Guideline>  $guidelines
-     * @param  list<string>  $shippedNames  Unused for guidelines today (no per-guideline write path), kept for signature symmetry.
+     * Three-way attribution for a skill's status:
+     *   ship                          — the skill survived the pipeline
+     *   shadowed by <vendor>          — lost to a host/scanned skill of the same name
+     *   filtered (declare: <tags>)    — tag-filter excluded it; user can add tags
+     *   excluded                      — not shipping for some other reason
+     *                                   (untagged skill that still didn't land —
+     *                                   usually `withExcludedSkills` or a renderer
+     *                                   issue; tag advice wouldn't help)
+     *
+     * @param  array<string, true>  $shipped
+     * @param  array<string, string>  $shadowedBy
      */
-    private function renderGuidelinesTable(array $guidelines, array $shippedNames): void
+    private function renderStatus(Skill $skill, array $shipped, array $shadowedBy, string $tagsLabel): string
+    {
+        if (isset($shipped[$skill->name])) {
+            return '<fg=green>ship</>';
+        }
+
+        if (isset($shadowedBy[$skill->name])) {
+            return sprintf('<fg=yellow>shadowed by %s</>', $shadowedBy[$skill->name]);
+        }
+
+        if ($skill->tags === []) {
+            return '<fg=yellow>excluded</>';
+        }
+
+        return '<fg=yellow>filtered (declare: ' . $tagsLabel . ')</>';
+    }
+
+    /**
+     * @param  list<Guideline>  $guidelines
+     */
+    private function renderGuidelinesTable(array $guidelines): void
     {
         if ($guidelines === []) {
             return;
         }
-
-        unset($shippedNames);
 
         $this->newLine();
         $this->line('<fg=cyan>laravel/boost-injected guidelines</>');
