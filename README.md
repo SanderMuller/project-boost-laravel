@@ -193,14 +193,14 @@ A dedicated `.github/workflows/ci-smoke.yml` covers the end-to-end install-and-s
 
 For teams who want to harden against muscle-memory `php artisan boost:install` calls (without `--mcp`) that would otherwise re-engage laravel/boost's `GuidelineWriter` + `SkillWriter` and race this package over `CLAUDE.md` / the per-agent skill dirs:
 
-```php
-// config/project-boost-laravel.php
-return [
-    'suppress_upstream_writers' => env('PROJECT_BOOST_SUPPRESS_UPSTREAM', true),
-];
+```bash
+# .env
+PROJECT_BOOST_SUPPRESS_UPSTREAM=true
 ```
 
-When true, a `CommandStarting` listener intercepts the `boost:install` command and force-injects `--mcp` if it wasn't already passed. laravel/boost short-circuits its feature-selection step (the gate for its guideline + skill writers) when `--mcp` is set, so the effect is the same as if the user had remembered to pass it themselves.
+The shipped config (`config/project-boost-laravel.php`) reads that env var with `env('PROJECT_BOOST_SUPPRESS_UPSTREAM', false)` — `=true`, `=1`, `=yes`, and any other truthy value all activate the flag (Laravel's `(bool)` cast convention; matches laravel/boost's own option handling).
+
+When activated, a `CommandStarting` listener intercepts the `boost:install` command and force-injects `--mcp` if it wasn't already passed. laravel/boost short-circuits its feature-selection step (the gate for its guideline + skill writers) when `--mcp` is set, so the effect is the same as if the user had remembered to pass it themselves.
 
 Off by default — the canonical entry point `project-boost:install` already passes `--mcp`, so the flag is genuinely belt-and-suspenders.
 
