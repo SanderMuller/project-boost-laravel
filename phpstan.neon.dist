@@ -50,16 +50,28 @@ parameters:
             reportUnmatched: false
         # Pest binds test closures' `$this` to the configured TestCase at
         # runtime, but phpstan sees `$this` as `Pest\PendingCalls\TestCall`
-        # for static analysis. Suppress the resulting "method not found" /
-        # "method on mixed" errors specifically inside Feature tests where
-        # Laravel TestCase methods like `$this->artisan(...)` are used.
+        # for static analysis. Two narrow regexes catch only this specific
+        # binding shape — typos against any other receiver, and undefined
+        # methods Pest's TestCall genuinely lacks, still fail.
+        #
+        # 1. `$this->artisan(...)` and a closed allowlist of Laravel
+        #    TestCase methods we actually call from Pest feature tests.
+        #    A typo like `$this->artisanX(...)` wouldn't match this regex
+        #    and would still fail — phpstan tells us, we widen the list
+        #    deliberately when adding a new test method.
+        # 2. Chained assertions on the artisan-result PendingCommand
+        #    (`->expectsOutput…`, `->assert…`, `->dontExpect…`,
+        #    `->doesntExpect…`, `->withoutMockingConsoleOutput`): phpstan
+        #    types the receiver as `mixed` after step 1's suppression, so
+        #    we match the specific Laravel testing method-name prefixes
+        #    on mixed.
         -
-            identifier: method.notFound
+            message: '#Call to an undefined method Pest\\PendingCalls\\TestCall::(artisan|withoutMockingConsoleOutput|expectException|expectExceptionMessage)\(\)#'
             paths:
                 - tests/Feature/*
             reportUnmatched: false
         -
-            identifier: method.nonObject
+            message: '#Cannot call method (expects|assert|dontExpect|doesntExpect|withoutMockingConsoleOutput)\w*\(\) on mixed#'
             paths:
                 - tests/Feature/*
             reportUnmatched: false
