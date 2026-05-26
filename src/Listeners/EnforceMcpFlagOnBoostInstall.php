@@ -77,6 +77,11 @@ final readonly class EnforceMcpFlagOnBoostInstall
             return ($this->isEnabled)();
         }
 
-        return config('project-boost-laravel.suppress_upstream_writers', false) === true;
+        // Accept any truthy value to match Laravel's project-wide `env()`
+        // convention — `=true` and `=1` (and `=yes`, etc.) all activate
+        // the flag. `env()` coerces `"true"` to bool true but leaves `"1"`
+        // as a raw string, so a strict `=== true` would silently reject
+        // a setup that the user reasonably expects to work.
+        return (bool) config('project-boost-laravel.suppress_upstream_writers', false);
     }
 }
