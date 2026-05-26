@@ -181,9 +181,25 @@ Runs the Pest suite (unit only).
 
 A dedicated `.github/workflows/ci-smoke.yml` covers the end-to-end install-and-sync path: it spins up a fresh `laravel/laravel` app, installs this package from the checkout, runs `project-boost:sync` against a minimal `boost.php`, and asserts no Blade directives (`@php`, `{{ $var }}`, `@boostsnippet`) leak into the generated `CLAUDE.md` / `.claude/skills/`. Triggered on any push or PR touching PHP source, `composer.json`, or `resources/boost/`.
 
+## Defensive flag: `suppress_upstream_writers`
+
+For teams who want to harden against muscle-memory `php artisan boost:install` calls (without `--mcp`) that would otherwise re-engage laravel/boost's `GuidelineWriter` + `SkillWriter` and race this package over `CLAUDE.md` / the per-agent skill dirs:
+
+```php
+// config/project-boost-laravel.php
+return [
+    'suppress_upstream_writers' => env('PROJECT_BOOST_SUPPRESS_UPSTREAM', true),
+];
+```
+
+When true, a `CommandStarting` listener intercepts the `boost:install` command and force-injects `--mcp` if it wasn't already passed. laravel/boost short-circuits its feature-selection step (the gate for its guideline + skill writers) when `--mcp` is set, so the effect is the same as if the user had remembered to pass it themselves.
+
+Off by default — the canonical entry point `project-boost:install` already passes `--mcp`, so the flag is genuinely belt-and-suspenders.
+
+Limitation: this does not suppress laravel/boost's integrations writers (cloud / sail / nightwatch). `--mcp` only short-circuits feature selection; the integrations multiselect still runs. Selecting an integration like `cloud` still triggers its writer.
+
 ## Roadmap
 
-- **`suppress_upstream_writers` config flag** — service-provider rebind of `Laravel\Boost\Install\{GuidelineWriter, SkillWriter}` for users who accidentally run interactive `boost:install`. Inert today; the `--mcp` wrapper covers the happy path.
 - **Non-interactive `project-boost:install`** — write `.mcp.json` directly (or pipe selections) so the wrapper can run in CI / Docker without inheriting laravel/boost's TTY-bound `multiselect` prompts.
 
 ## License
