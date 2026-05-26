@@ -64,7 +64,10 @@ jobs:
 
       - name: Run project-boost:install (non-interactive — exercises the McpWriter-per-agent path)
         working-directory: skeleton
-        run: php artisan project-boost:install --no-sync
+        # Explicit --no-interaction defensively; the wrapper also auto-detects
+        # via stream_isatty(STDIN), but the explicit flag is a belt-and-
+        # suspenders signal for CI clarity.
+        run: php artisan project-boost:install --no-sync --no-interaction
 
       - name: Assert MCP config landed on disk
         working-directory: skeleton

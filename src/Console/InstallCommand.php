@@ -44,11 +44,31 @@ final class InstallCommand extends Command
 
     public function handle(): int
     {
-        if (! $this->input->isInteractive()) {
+        if ($this->isNonInteractive()) {
             return $this->runNonInteractive();
         }
 
         return $this->runInteractive();
+    }
+
+    /**
+     * Symfony Console's `$input->isInteractive()` reflects the explicit
+     * `--no-interaction` flag but defaults to true even when STDIN isn't
+     * a TTY (CI runners, Docker, piped invocations). Probe the actual
+     * stream too so the wrapper genuinely auto-detects non-interactive
+     * environments without users having to remember the flag.
+     */
+    private function isNonInteractive(): bool
+    {
+        if (! $this->input->isInteractive()) {
+            return true;
+        }
+
+        if (defined('STDIN') && function_exists('stream_isatty')) {
+            return ! @stream_isatty(STDIN);
+        }
+
+        return false;
     }
 
     private function runInteractive(): int
