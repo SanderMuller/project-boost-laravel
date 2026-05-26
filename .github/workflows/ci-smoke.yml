@@ -62,6 +62,25 @@ jobs:
           return BoostConfig::configure()->withAgents([Agent::CLAUDE_CODE]);
           PHP
 
+      - name: Run project-boost:install (non-interactive — exercises the McpWriter-per-agent path)
+        working-directory: skeleton
+        run: php artisan project-boost:install --no-sync
+
+      - name: Assert MCP config landed on disk
+        working-directory: skeleton
+        run: |
+          set -e
+          if [ ! -f .mcp.json ]; then
+            echo "FAIL: .mcp.json was not written by project-boost:install"
+            exit 1
+          fi
+          if ! grep -q 'laravel-boost' .mcp.json; then
+            echo "FAIL: .mcp.json does not contain the laravel-boost MCP server entry"
+            cat .mcp.json
+            exit 1
+          fi
+          echo "PASS: .mcp.json present and contains laravel-boost server entry"
+
       - name: Run project-boost:sync
         working-directory: skeleton
         run: php artisan project-boost:sync

@@ -41,7 +41,15 @@ The wrapper:
 > If you run `php artisan boost:install` **without** `--mcp` (its interactive default), laravel/boost's `GuidelineWriter` and `SkillWriter` will run alongside this package — both will write to `CLAUDE.md` and `.{agent}/skills/`, racing each other. Always go through `project-boost:install` or pass `--mcp` explicitly.
 
 > [!NOTE]
-> The wrapper still inherits laravel/boost's interactive `multiselect` prompts for integrations (cloud / sail / nightwatch) and agents — `--mcp` only short-circuits the feature picker, not these. Requires a TTY. Selecting an integration like `cloud` re-engages laravel/boost's per-integration writer (the parallel-writer warning above applies to those too). For CI / non-TTY, write `.mcp.json` directly or pipe the prompt answers.
+> The TTY path inherits laravel/boost's interactive `multiselect` prompts for integrations (cloud / sail / nightwatch) and agents — `--mcp` only short-circuits the feature picker, not these. Selecting an integration like `cloud` re-engages laravel/boost's per-integration writer (the parallel-writer warning above applies to those too).
+>
+> **Non-TTY mode** (CI / Docker / explicit `--no-interaction`): the wrapper skips `boost:install` entirely and writes MCP config directly via laravel/boost's `McpWriter` for each agent declared in `boost.php`. No prompts, no integrations. Same MCP config files land on disk — same shape, same boost server entry. Use this in CI:
+>
+> ```bash
+> php artisan project-boost:install --no-interaction
+> ```
+>
+> The wrapper auto-detects non-TTY environments too — explicit `--no-interaction` isn't required in GitHub Actions / Docker / piped invocations. If your `boost.php` declares agents the wrapper doesn't recognize (or that don't support MCP), they're skipped with a one-line log per agent.
 
 ## `boost.php`
 
@@ -200,7 +208,7 @@ Limitation: this does not suppress laravel/boost's integrations writers (cloud /
 
 ## Roadmap
 
-- **Non-interactive `project-boost:install`** — write `.mcp.json` directly (or pipe selections) so the wrapper can run in CI / Docker without inheriting laravel/boost's TTY-bound `multiselect` prompts.
+_Major roadmap items have all shipped through 0.2.x. Future work will be tracked on GitHub issues; PRs welcome._
 
 ## License
 
