@@ -5,6 +5,74 @@ All notable changes to `sandermuller/project-boost-laravel` will be documented i
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.3.0 - 2026-05-26
+
+### Highlights
+
+#### Non-interactive `project-boost:install`
+
+The wrapper now branches on the terminal environment:
+
+- **TTY mode** (unchanged): delegate to `boost:install --mcp` so laravel/boost wires the MCP client config. Inherits its `multiselect` prompts for integrations + agents.
+- **Non-TTY mode** (CI / Docker / explicit `--no-interaction` / any environment where STDIN isn't a TTY): skip `boost:install` entirely, read agents from `boost.php` via `BoostConfigLoader::load()`, invoke laravel/boost's `McpWriter` per `SupportsMcp` agent directly. Same MCP config files land on disk; zero interactive prompts; safe in CI.
+
+Detection probes `stream_isatty(STDIN)` after the explicit `--no-interaction` flag check, so the non-interactive branch fires automatically on CI runners that don't pass the flag — no muscle memory required.
+
+Reuses laravel/boost's own `McpWriter` per-agent rather than re-implementing per-agent MCP config writers, so every agent that implements `SupportsMcp` ships supported. No fork risk on the MCP config shape; future laravel/boost agents land for free.
+
+Behavior in non-TTY mode:
+
+- No `boost.php` → FAILURE with create-one hint.
+- Empty `withAgents([])` → SUCCESS with warning.
+- Agent declared in `boost.php` but unrecognized by laravel/boost's `AgentsDetector` → skip with log.
+- Agent doesn't implement `SupportsMcp` → skip with log.
+- `McpWriter::write()` throws → log failure, continue with remaining agents.
+- Any failure → exit FAILURE before cascading to `project-boost:sync`.
+
+Summary line: `MCP config · wrote=N · skipped=N · failed=N`.
+
+#### Defensive flag: `suppress_upstream_writers`
+
+For teams who want to harden against muscle-memory `php artisan boost:install` calls (without `--mcp`) that would otherwise re-engage laravel/boost's `GuidelineWriter` + `SkillWriter` and race this package over `CLAUDE.md` / the per-agent skill dirs:
+
+```bash
+# .env
+PROJECT_BOOST_SUPPRESS_UPSTREAM=true
+
+```
+A `CommandStarting` event listener intercepts the `boost:install` command and force-injects `--mcp` if it wasn't already passed. laravel/boost short-circuits its feature-selection step (the gate for its guideline + skill writers) when `--mcp` is set, so the user-visible outcome matches what `--mcp` would have produced.
+
+Accepts any truthy env value (`=true`, `=1`, `=yes`, etc.) — matches Laravel's project-wide convention.
+
+Off by default: the canonical entry point `project-boost:install` already passes `--mcp` in TTY mode and bypasses `boost:install` entirely in non-TTY mode, so the flag is genuinely belt-and-suspenders.
+
+Limitation noted in docs: this does not suppress laravel/boost's integrations writers (cloud / sail / nightwatch). `--mcp` only short-circuits feature selection; the integrations multiselect still runs in TTY mode. Selecting an integration like `cloud` still triggers its writer.
+
+#### boost-core floor → `^0.7.4`
+
+Tightens the constraint from `^0.7.0` to `^0.7.4` to pick up:
+
+- **`boost doctor --check-versions`** — opt-in Packagist lookup that flags boost-* family path-repo installs shadowing a newer published version. Surfaced from a real consumer's failure mode (path-repo from an rc cycle outliving the upgrade window, locking the dev SHA, partial-write state on disk mid-sync). Consumers running `vendor/bin/boost doctor --check-versions` post-install get the new audit for free.
+- **`boost where` precise origin labels** — `vendor` / `remote` / `vendor+remote` instead of the ambiguous `vendor or remote`. No companion code change required (we don't consume the internal helper directly).
+
+Companion's `project-boost:where` symmetry with `boost where` continues to work end-to-end, exposing the laravel/boost-injected skill set with per-skill `ship` / `shadowed by <vendor>` / `filtered (declare: <tags>)` / `excluded` status.
+
+#### CI smoke now exercises the install path end-to-end
+
+`.github/workflows/ci-smoke.yml` runs `php artisan project-boost:install --no-sync --no-interaction` against a fresh `laravel/laravel` skeleton (in addition to the pre-existing `project-boost:sync` step), then asserts `.mcp.json` lands on disk with a `laravel-boost` server entry. Catches AgentsDetector / McpWriter contract drift across laravel/boost releases.
+
+The non-interactive install bug found mid-release — `$input->isInteractive()` defaulting to true even when STDIN isn't a TTY — was caught by exactly this workflow before tagging.
+
+### Upgrade notes
+
+No breaking changes. `composer update sandermuller/project-boost-laravel` picks it up.
+
+If you've been passing `--no-interaction` explicitly to `project-boost:install` for CI: still works, identical behavior. If you weren't passing it and previously hit `multiselect` crashes in CI: drop the workaround and the wrapper auto-detects now.
+
+If you want the defensive `suppress_upstream_writers` guardrail active, add `PROJECT_BOOST_SUPPRESS_UPSTREAM=true` to your `.env`. Optional — happy-path users don't need it.
+
+**Full Changelog**: https://github.com/SanderMuller/project-boost-laravel/compare/0.2.0...0.3.0
+
 ## 0.2.0 - 2026-05-25
 
 ### Highlights
@@ -13,6 +81,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ```bash
 php artisan project-boost:where
+
 
 ```
 Lists every laravel/boost-bundled skill + guideline this package injects into boost-core's `SyncEngine`, with per-skill status for the current `boost.php`:
@@ -127,6 +196,7 @@ This package closes those gaps. laravel/boost still owns the MCP server (its cor
 
 ```bash
 composer require --dev sandermuller/project-boost-laravel
+
 
 
 ```
