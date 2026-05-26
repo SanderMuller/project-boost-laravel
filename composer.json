@@ -21,7 +21,7 @@
         "illuminate/contracts": "^12.0||^13.0",
         "illuminate/support": "^12.0||^13.0",
         "laravel/boost": "^2.4",
-        "sandermuller/boost-core": "^0.7.4"
+        "sandermuller/boost-core": "^0.7.6"
     },
     "require-dev": {
         "driftingly/rector-laravel": "^2.4",
