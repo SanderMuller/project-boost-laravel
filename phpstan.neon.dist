@@ -48,3 +48,18 @@ parameters:
             paths:
                 - tests/*
             reportUnmatched: false
+        # Pest binds test closures' `$this` to the configured TestCase at
+        # runtime, but phpstan sees `$this` as `Pest\PendingCalls\TestCall`
+        # for static analysis. Suppress the resulting "method not found" /
+        # "method on mixed" errors specifically inside Feature tests where
+        # Laravel TestCase methods like `$this->artisan(...)` are used.
+        -
+            identifier: method.notFound
+            paths:
+                - tests/Feature/*
+            reportUnmatched: false
+        -
+            identifier: method.nonObject
+            paths:
+                - tests/Feature/*
+            reportUnmatched: false

@@ -1,4 +1,5 @@
 <?php declare(strict_types=1);
+use SanderMuller\ProjectBoostLaravel\Tests\TestCase;
 
 /*
 |--------------------------------------------------------------------------
@@ -13,7 +14,7 @@
 |
 */
 
-// pest()->extend(Orchestra\Testbench\TestCase::class)->in('Feature');
+pest()->extend(TestCase::class)->in('Feature');
 
 /*
 |--------------------------------------------------------------------------
