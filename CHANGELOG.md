@@ -5,6 +5,47 @@ All notable changes to `sandermuller/project-boost-laravel` will be documented i
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.3.2 - 2026-05-27
+
+### What's in
+
+#### README rewrite
+
+The previous README sold the package as a bolt-on. The new one leads with three things a reader needs to make a decision:
+
+1. **Family-routing table at the top.** "Which package fits your role?" — covers the seven packages in the sandermuller boost family, with `← you are here` annotation marking the Laravel-app row. Self-locating for anyone landing here directly from Packagist.
+2. **`## What this adds on top of laravel/boost` side-by-side comparison.** Concrete feature delta in two columns: `laravel/boost` alone vs. + this package. Headline rows cover tag filtering, remote skill sources, vendor allowlist, `boost where` origin tracing, user-scope sync, and `boost doctor --check-versions`. The agent-count row was removed late in the cycle when `laravel/boost` shipped Antigravity upstream — the durable axes (framework-agnostic scope, explicit allowlist, remote skill sources, conventions schema) carry the comparison; agent count was never the durable axis.
+3. **`## Where do the skills come from?` four-source menu.** Skills stack from four sources: hand-authored `.ai/skills/` folder, Composer-installed catalog package, external GitHub sources via `withRemoteSkills()`, and `laravel/boost`'s bundled set. Mix freely. `sandermuller/boost-skills` is framed as one example of the catalog-package pattern, not as a recommended dependency.
+
+Architecture and remote-skills sections shortened to link out to [boost-core's README](https://github.com/sandermuller/boost-core) instead of duplicating engine internals.
+
+Tone shift throughout: complements-not-competes with `laravel/boost`. First person introduced in the skill-source menu. Em-dash count down, defensive "not X; Y" framings replaced with direct statements.
+
+#### Skill-source filter semantics corrected
+
+The previous README claimed that `withAllowedVendors()` and `withTags()` "apply uniformly regardless of where a skill came from." That claim was false on both axes — `boost-core`'s `SyncEngine::resolveSkills` gates them asymmetrically per source:
+
+- `withAllowedVendors()` gates Composer-scanned vendors (source 2) only. Host skills, remote-declared skills, and the `laravel/boost` wrapper bundle all bypass it.
+- `withTags()` filters sources 2, 3, and 4 — but NOT host skills (source 1). Host skills bypass `SkillTagFilter` entirely (parallel comment in the engine documents "host guidelines are never filtered" for the same reason).
+
+Corrected wording surfaces both axes explicitly. The bug was found by an external code-review pass on the family snippets file and verified by `boost-core`'s maintainer against current source. The corrected per-source matrix is now the canonical reference across the family.
+
+#### `boost.php` config
+
+- `Tag::Laravel` added to `withTags()`. The previous PHP/Github-only tag set was missing the Laravel context tag for the companion's own dev environment.
+- `withTags()` call reflowed from one-line minified to multi-line with one tag per line, matching the family convention (the multi-line shape is hand-edited; `composer boost:install` emits the minified shape).
+- `->withDisabledEmitters([])` no-op stripped from the dogfood config. Empty-array configuration calls are functional no-ops but propagate to published examples — `boost-core` 0.8.0 also fixed the scaffold template so future installs don't inherit the line.
+
+### Upgrade notes
+
+No breaking changes in this package's API or behavior. `composer update sandermuller/project-boost-laravel` picks it up, with the caveat that the new `boost-core ^0.8` floor will pull the engine forward if your composer.json allowed it.
+
+The README rewrite + filter-semantics correction are the user-visible artefacts; runtime behavior is identical to 0.3.1.
+
+If your project's `boost.php` was authored against the previous README's examples, it still works as-is — the `withTags()` set in the README continues to use `Tag::Laravel, Tag::Php` as the minimal recommendation; the four-source skill menu is documentation of how the existing API surfaces work, not a new mechanism.
+
+**Full Changelog**: https://github.com/SanderMuller/project-boost-laravel/compare/0.3.1...0.3.2
+
 ## 0.3.1 - 2026-05-27
 
 ### What's in
@@ -85,6 +126,7 @@ For teams who want to harden against muscle-memory `php artisan boost:install` c
 PROJECT_BOOST_SUPPRESS_UPSTREAM=true
 
 
+
 ```
 A `CommandStarting` event listener intercepts the `boost:install` command and force-injects `--mcp` if it wasn't already passed. laravel/boost short-circuits its feature-selection step (the gate for its guideline + skill writers) when `--mcp` is set, so the user-visible outcome matches what `--mcp` would have produced.
 
@@ -127,6 +169,7 @@ If you want the defensive `suppress_upstream_writers` guardrail active, add `PRO
 
 ```bash
 php artisan project-boost:where
+
 
 
 
@@ -243,6 +286,7 @@ This package closes those gaps. laravel/boost still owns the MCP server (its cor
 
 ```bash
 composer require --dev sandermuller/project-boost-laravel
+
 
 
 
