@@ -39,5 +39,4 @@ return BoostConfig::configure()
         Tag::Laravel,
         Tag::Php,
         'release-automation',
-    )
-    ->withDisabledEmitters([]);
+    );

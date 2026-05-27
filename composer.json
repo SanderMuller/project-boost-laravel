@@ -21,7 +21,7 @@
         "illuminate/contracts": "^12.0||^13.0",
         "illuminate/support": "^12.0||^13.0",
         "laravel/boost": "^2.4",
-        "sandermuller/boost-core": "^0.7.6"
+        "sandermuller/boost-core": "^0.8.0"
     },
     "require-dev": {
         "driftingly/rector-laravel": "^2.4",
@@ -40,8 +40,8 @@
         "phpstan/phpstan-strict-rules": "^2.0",
         "rector/rector": "^2.4",
         "rector/type-perfect": "^2.1",
-        "sandermuller/boost-skills": "^1.4",
-        "sandermuller/package-boost-php": "^0.9.0",
+        "sandermuller/boost-skills": "^1.6",
+        "sandermuller/package-boost-php": "^0.10.0",
         "spaze/phpstan-disallowed-calls": "^4.12",
         "symplify/phpstan-extensions": "^12.0",
         "tomasvotruba/cognitive-complexity": "^1.1",

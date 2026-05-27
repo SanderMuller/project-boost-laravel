@@ -22,19 +22,18 @@ You run both packages together. Neither replaces the other; the design assumes t
 
 ## What this adds on top of `laravel/boost`
 
-|                                             | `laravel/boost` alone                   | + `project-boost-laravel`                                              |
-|---------------------------------------------|-----------------------------------------|------------------------------------------------------------------------|
-| MCP server (`boost:mcp`)                    | ✅                                       | ✅ unchanged                                                            |
-| Laravel docs API + semantic search          | ✅                                       | ✅ unchanged                                                            |
-| Bundled Laravel skills + guidelines         | ✅                                       | ✅ re-rendered through this package's pipeline                          |
-| Agents                                      | 4 (Claude Code, Cursor, Codex, Copilot) | **9** (+ Gemini, Junie, Kiro, OpenCode, Amp)                           |
+|                                             | `laravel/boost` alone                   | + `project-boost-laravel`                                               |
+|---------------------------------------------|-----------------------------------------|-------------------------------------------------------------------------|
+| MCP server (`boost:mcp`)                    | ✅                                       | ✅ unchanged                                                             |
+| Laravel docs API + semantic search          | ✅                                       | ✅ unchanged                                                             |
+| Bundled Laravel skills + guidelines         | ✅                                       | ✅ re-rendered through this package's pipeline                           |
 | Tag filtering                               | —                                       | ✅ `withTags()`. Ship `inertia-vue-development` only on Inertia projects |
 | Remote skill sources                        | —                                       | ✅ `withRemoteSkills()`. Pull GitHub-published `.skill` bundles          |
 | Vendor allowlist                            | auto via `composer.json`                | ✅ explicit `withAllowedVendors()` for collision control                 |
-| `boost where` origin tracing                | —                                       | ✅ host / vendor / remote / shadow attribution                          |
-| `project-boost:where` injection-set tracing | —                                       | ✅ symmetric, for the `laravel/boost` skill set this package injects    |
-| User-scope sync                             | —                                       | ✅ `boost sync --scope=user` for globally-installed CLI tools           |
-| Doctor + path-repo audit                    | —                                       | ✅ `boost doctor --check-versions`                                      |
+| `boost where` origin tracing                | —                                       | ✅ host / vendor / remote / shadow attribution                           |
+| `project-boost:where` injection-set tracing | —                                       | ✅ symmetric, for the `laravel/boost` skill set this package injects     |
+| User-scope sync                             | —                                       | ✅ `boost sync --scope=user` for globally-installed CLI tools            |
+| Doctor + path-repo audit                    | —                                       | ✅ `boost doctor --check-versions`                                       |
 
 Under the hood, `project-boost:install` calls `boost:install --mcp` so laravel/boost writes its MCP client config the same way it always does, then `project-boost:sync` takes over for the nine-agent fan-out.
 
@@ -91,38 +90,38 @@ Skills are tag-gated. A skill ships if every tag in its `metadata.boost-tags` is
 
 Common shapes:
 
-| Project | Tags |
-|---|---|
-| Laravel + Livewire | `Tag::Laravel, Tag::Php, 'livewire'` |
-| Laravel + Inertia React | `Tag::Laravel, Tag::Php, 'frontend', 'inertia'` |
-| Laravel API only | `Tag::Laravel, Tag::Php` |
-| + Pest 4 + browser tests | add `'pest'` |
+| Project                  | Tags                                            |
+|--------------------------|-------------------------------------------------|
+| Laravel + Livewire       | `Tag::Laravel, Tag::Php, 'livewire'`            |
+| Laravel + Inertia React  | `Tag::Laravel, Tag::Php, 'frontend', 'inertia'` |
+| Laravel API only         | `Tag::Laravel, Tag::Php`                        |
+| + Pest 4 + browser tests | add `'pest'`                                    |
 
 See the [`boost-core` README](https://github.com/sandermuller/boost-core) for the full `BoostConfig` surface.
 
 ## Commands
 
-| Command | Does |
-|---|---|
-| `project-boost:install` | Wraps `boost:install --mcp` (boost owns MCP) and runs `project-boost:sync`. Auto-detects non-TTY for CI / Docker. Recommended entry point. |
-| `project-boost:install --no-sync` | MCP only; skip the sync. |
-| `project-boost:sync` | Discover, render, tag-filter, fan out to nine agents. Run after `composer install` or after editing `boost.php`. |
-| `project-boost:sync --dry-run` | Preview the full SyncEngine pipeline (laravel/boost + host + scanned vendors + remote skills) in check mode. Requires `boost.php`. |
-| `project-boost:where` | List the laravel/boost-bundled skills and guidelines this package injects, with per-skill ship / tag-filter / shadow status. The companion to `vendor/bin/boost where`, which covers the host, scanned-vendor, and remote origins. |
+| Command                           | Does                                                                                                                                                                                                                               |
+|-----------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `project-boost:install`           | Wraps `boost:install --mcp` (boost owns MCP) and runs `project-boost:sync`. Auto-detects non-TTY for CI / Docker. Recommended entry point.                                                                                         |
+| `project-boost:install --no-sync` | MCP only; skip the sync.                                                                                                                                                                                                           |
+| `project-boost:sync`              | Discover, render, tag-filter, fan out to nine agents. Run after `composer install` or after editing `boost.php`.                                                                                                                   |
+| `project-boost:sync --dry-run`    | Preview the full SyncEngine pipeline (laravel/boost + host + scanned vendors + remote skills) in check mode. Requires `boost.php`.                                                                                                 |
+| `project-boost:where`             | List the laravel/boost-bundled skills and guidelines this package injects, with per-skill ship / tag-filter / shadow status. The companion to `vendor/bin/boost where`, which covers the host, scanned-vendor, and remote origins. |
 
 ## Coexistence with `laravel/boost`
 
-| Concern | Owner |
-|---|---|
-| MCP server (`boost:mcp` artisan command, `boost:install` MCP config writes) | **`laravel/boost`** |
-| MCP config files (`.mcp.json`, `.amp/settings.json`, agent-specific) | **`laravel/boost`** |
-| Laravel docs API + semantic search | **`laravel/boost`** |
-| `CLAUDE.md` / `AGENTS.md` / `GEMINI.md` content | **this package** (via `boost-core`) |
-| `.{agent}/skills/<name>/SKILL.md` files | **this package** (via `boost-core`) |
-| Skill content discovery + Blade rendering | **this package** (`LaravelBoostAssetReader` + `BladeRenderer`) |
-| Versioned-variant resolution (e.g. `pest/3` vs `pest/4`) | **this package**. `Laravel\Roster\Roster::scan()` matches the host's installed major |
-| Tag filtering + collision resolution | **`boost-core`** |
-| Remote skill fetching (`withRemoteSkills`) | **`boost-core`** |
+| Concern                                                                     | Owner                                                                                |
+|-----------------------------------------------------------------------------|--------------------------------------------------------------------------------------|
+| MCP server (`boost:mcp` artisan command, `boost:install` MCP config writes) | **`laravel/boost`**                                                                  |
+| MCP config files (`.mcp.json`, `.amp/settings.json`, agent-specific)        | **`laravel/boost`**                                                                  |
+| Laravel docs API + semantic search                                          | **`laravel/boost`**                                                                  |
+| `CLAUDE.md` / `AGENTS.md` / `GEMINI.md` content                             | **this package** (via `boost-core`)                                                  |
+| `.{agent}/skills/<name>/SKILL.md` files                                     | **this package** (via `boost-core`)                                                  |
+| Skill content discovery + Blade rendering                                   | **this package** (`LaravelBoostAssetReader` + `BladeRenderer`)                       |
+| Versioned-variant resolution (e.g. `pest/3` vs `pest/4`)                    | **this package**. `Laravel\Roster\Roster::scan()` matches the host's installed major |
+| Tag filtering + collision resolution                                        | **`boost-core`**                                                                     |
+| Remote skill fetching (`withRemoteSkills`)                                  | **`boost-core`**                                                                     |
 
 Things to avoid:
 
