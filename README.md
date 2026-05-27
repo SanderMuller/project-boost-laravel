@@ -54,7 +54,7 @@ Anywhere you want. Skill sources stack:
 - **External, non-Composer sources** via `withRemoteSkills()`. Pull GitHub-published `.skill` bundles or single-skill repos straight from the URL.
 - **`laravel/boost`'s bundled Laravel skills** plus whatever Laravel-aware third-party packages it knows about. Picked up through the injection seam this package adds.
 
-Mix and match freely. The vendor allowlist (`withAllowedVendors()`) gates which Composer packages may publish skills into your project; the tag filter (`withTags()`) gates which skills make it through. Both apply uniformly regardless of where a skill came from.
+Mix and match freely. `withAllowedVendors()` gates Composer-scanned vendors (source 2) only — host skills (source 1), remote skills (source 3), and the `laravel/boost` bundle (source 4) are not gated by it. `withTags()` filters sources 2, 3, and 4. Host skills (source 1) bypass both gates: your project authored them, so the engine treats them as canonical and applies neither filter.
 
 ## First run
 
