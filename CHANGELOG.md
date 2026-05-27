@@ -5,6 +5,51 @@ All notable changes to `sandermuller/project-boost-laravel` will be documented i
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.3.1 - 2026-05-27
+
+### What's in
+
+#### Testbench feature tests for `project-boost:install` branching
+
+The TTY-detection regression in 0.3.0 — `$input->isInteractive()` defaulting to true even when STDIN isn't a TTY, sending CI / Docker invocations down the multiselect-crashes path — was only caught at the ci-smoke step of the release gate, after local Pest had passed clean. 0.3.1 closes that surface gap with a Testbench-backed feature suite for `InstallCommand`'s TTY vs non-TTY branching:
+
+- `tests/TestCase.php` — Testbench base that registers laravel/boost + companion ServiceProviders.
+- `tests/Feature/Console/InstallCommandTest.php` — four cases covering the non-interactive branch matrix:
+  1. `boost.php` missing → FAILURE with create-one hint.
+  2. Empty `withAgents([])` → SUCCESS with warning.
+  3. `Agent::CLAUDE_CODE` → `.mcp.json` written + `--no-sync` skips the sync step.
+  4. Rsync-style summary line `MCP config · wrote=1 · skipped=0 · failed=0`.
+  
+
+Pest count: 20 → 24 tests / 31 → 43 assertions. The regression class that snuck through last release would now fail in local Pest before reaching CI.
+
+The chdir dance in `beforeEach` is load-bearing: laravel/boost's `Install\Mcp\FileWriter` resolves `.mcp.json` against PHP's cwd, not against `base_path()`. In a Pest run the cwd defaults to the package root, so a straight artisan call would write into tracked package files. Each test chdir's to `base_path()` (Testbench's workbench, gitignored) on entry and restores on exit.
+
+#### PHPStan ignores narrowed for Feature tests
+
+The initial Feature-test commit added blanket `identifier: method.notFound` + `method.nonObject` suppressions under `tests/Feature/*` to handle Pest's `$this`-binding limitation (phpstan sees the closure's `$this` as `Pest\PendingCalls\TestCall`, not the bound TestCase). A typo like `$this->artisanX(...)` would have silently passed analysis under that rule.
+
+Replaced with two narrow message-regex ignores:
+
+1. Closed allowlist of Laravel TestCase methods Pest's `TestCall` shim doesn't declare (`artisan`, `withoutMockingConsoleOutput`, `expectException`, `expectExceptionMessage`). A typo against the same receiver but a different method name fails loudly — the allowlist gets widened deliberately when a new test method is introduced.
+2. Cannot-call-method-on-mixed cascade limited to Laravel test assertion method-name prefixes (`expects…`, `assert…`, `dontExpect…`, `doesntExpect…`, `withoutMockingConsoleOutput`).
+
+Verified empirically: introducing `$this->artisanXTypo(...)` in a feature test now produces 4 `method.notFound` errors. Restoring `artisan(...)` clears them.
+
+#### boost-core floor → `^0.7.6`
+
+Tightens the constraint from `^0.7.0` to `^0.7.6`. Picks up boost-core's:
+
+- Phase 3 of agent-commands-sync: argument-placeholder transpilation for `.ai/commands/<name>.md` — canonical `$ARGUMENTS` + `$N` one-indexed + `$name` + `\$` escape, per-agent transpilers for Claude's zero-indexed `$N`, Copilot's `${input:...}`, Junie's all-required-named contract, Kiro's brace form, Cursor + Amp's verbatim-with-warn. Gemini + Codex stay doctor-only with manual-path notes.
+- `boost doctor --check-versions` (from 0.7.2): opt-in Packagist lookup that flags path-repo installs shadowing a newer published version.
+- Precise `boost where` origin labels (`vendor` / `remote` / `vendor+remote`).
+
+Companion uses `SyncEngine::sync()` exclusively, never `AgentTarget::planCommands()` directly, so 0.7.6's internal `planCommands()` return-shape change from `list<PendingWrite>` to `array{writes, warnings}` doesn't intersect.
+
+No new direct dependencies.
+
+**Full Changelog**: https://github.com/SanderMuller/project-boost-laravel/compare/0.3.0...0.3.1
+
 ## 0.3.0 - 2026-05-26
 
 ### Highlights
@@ -38,6 +83,7 @@ For teams who want to harden against muscle-memory `php artisan boost:install` c
 ```bash
 # .env
 PROJECT_BOOST_SUPPRESS_UPSTREAM=true
+
 
 ```
 A `CommandStarting` event listener intercepts the `boost:install` command and force-injects `--mcp` if it wasn't already passed. laravel/boost short-circuits its feature-selection step (the gate for its guideline + skill writers) when `--mcp` is set, so the user-visible outcome matches what `--mcp` would have produced.
@@ -81,6 +127,7 @@ If you want the defensive `suppress_upstream_writers` guardrail active, add `PRO
 
 ```bash
 php artisan project-boost:where
+
 
 
 ```
@@ -196,6 +243,7 @@ This package closes those gaps. laravel/boost still owns the MCP server (its cor
 
 ```bash
 composer require --dev sandermuller/project-boost-laravel
+
 
 
 
