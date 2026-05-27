@@ -34,5 +34,10 @@ return BoostConfig::configure()
         'sandermuller/package-boost-laravel',
         'sandermuller/package-boost-php',
     ])
-    ->withTags(Tag::Php, Tag::Github, 'release-automation')
+    ->withTags(
+        Tag::Github,
+        Tag::Laravel,
+        Tag::Php,
+        'release-automation',
+    )
     ->withDisabledEmitters([]);
