@@ -185,9 +185,9 @@ Cache + offline behavior, `BOOST_GITHUB_TOKEN` for rate limits, `BOOST_REMOTE_ST
 composer test
 ```
 
-Runs the Pest suite (unit only).
+Runs the Pest suite — unit tests (discovery, version resolution, the suppress-upstream listener) + Testbench-backed feature tests for `project-boost:install`'s TTY vs non-TTY branching.
 
-A dedicated `.github/workflows/ci-smoke.yml` covers the end-to-end install-and-sync path: it spins up a fresh `laravel/laravel` app, installs this package from the checkout, runs `project-boost:sync` against a minimal `boost.php`, and asserts no Blade directives (`@php`, `{{ $var }}`, `@boostsnippet`) leak into the generated `CLAUDE.md` / `.claude/skills/`. Triggered on any push or PR touching PHP source, `composer.json`, or `resources/boost/`.
+A dedicated `.github/workflows/ci-smoke.yml` covers the end-to-end install-and-sync path: it spins up a fresh `laravel/laravel` app, installs this package from the checkout, runs `project-boost:install --no-sync --no-interaction` against a minimal `boost.php` (asserting `.mcp.json` lands with the `laravel-boost` server entry), then runs `project-boost:sync` and asserts no Blade directives (`@php`, `@boostsnippet`) leak into the generated `CLAUDE.md` / `.claude/skills/`. Triggered on any push or PR touching PHP source, `composer.json`, or `resources/boost/`.
 
 ## Defensive flag: `suppress_upstream_writers`
 
@@ -208,7 +208,7 @@ Limitation: this does not suppress laravel/boost's integrations writers (cloud /
 
 ## Roadmap
 
-_Major roadmap items have all shipped through 0.2.x. Future work will be tracked on GitHub issues; PRs welcome._
+_Major roadmap items have all shipped through 0.3.x. Future work will be tracked on GitHub issues; PRs welcome._
 
 ## License
 
