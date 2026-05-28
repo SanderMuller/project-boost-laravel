@@ -5,6 +5,58 @@ All notable changes to `sandermuller/project-boost-laravel` will be documented i
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.3.6 - 2026-05-28
+
+Two related bare-CLI-in-Laravel-project fixes landing alongside `boost-core` 0.9.4's diagnostics-rendering improvements.
+
+Safe drop-in upgrade from 0.3.5.
+
+### What's in
+
+#### `BladeRenderer` container-bootstrap guard
+
+`RendersBladeGuidelines` (the laravel/boost trait this renderer composes from) internally calls `Container::path()` — a method on `Illuminate\Foundation\Application`, not on the base `Illuminate\Container`. When bare `vendor/bin/boost sync` runs in a Laravel project AND the consumer's `boost.php` declares `->withSkillRenderers(BladeRenderer::class)`, the renderer gets instantiated against the bare Container (the artisan kernel hasn't bootstrapped the Application), and the eventual `Container::path()` call fails with a cryptic "undefined method" error mid-render.
+
+Before `boost-core` 0.9.3 (the render-fail-then-write safety gate), the error fired AFTER partial content was already in flight to managed regions — operators saw corrupted `CLAUDE.md` output without a clear explanation. With 0.9.3 the data-loss surface is bounded; with 0.9.4 the diagnostics surface around it improves; with this release the wrapper-side surfaces a clear "use artisan instead" message before the renderer even attempts the bootstrap-dependent work.
+
+Implementation: top of `BladeRenderer::render()` checks `Container::getInstance() instanceof Application` and throws an actionable `RuntimeException` if not:
+
+```
+BladeRenderer requires a bootstrapped Laravel Application; the current
+container is a bare Illuminate\Container. This typically happens when
+running `vendor/bin/boost sync` in a Laravel project. Use `php artisan
+project-boost:sync` instead — the artisan entry point bootstraps the
+framework before invoking the renderer. To skip Blade rendering
+entirely, remove BladeRenderer from your boost.php withSkillRenderers()
+declaration.
+
+```
+Combined with the engine's 0.9.3 safety gate (which converts the thrown exception into a `SyncResult::error` rather than letting it propagate mid-write), the worst-case path is now: operator sees a clear message, no partial writes happen, recovery is straightforward.
+
+#### `SyncCommand` diagnostics section header rename
+
+`boost-core` 0.9.4 renames the diagnostics section header from `Project Conventions` to `Diagnostics` because the `SyncResult::diagnostics` list now carries multiple kinds beyond conventions content (parseable-divergence warnings, schema parse failures, scaffold notes, etc.). Mirroring the rename here keeps visual language consistent across both entry points (`php artisan project-boost:sync` and `vendor/bin/boost sync`).
+
+`SyncCommand::renderDiagnostics()` already orders the render BEFORE the `hasErrors` short-circuit (same shape `boost-core` 0.9.4 locked in engine-side), so no structural change beyond the header rename.
+
+### Trace note: no engine-side auto-discovery layer
+
+The `BladeRenderer` fix is purely wrapper-side. The engine maintainer's trace ([`boost-core` task #53](https://github.com/sandermuller/boost-core)) confirmed no auto-discovery layer exists engine-side — `PassthroughRenderer` is the only renderer `boost-core` ships, and every other renderer must be explicitly wired via `BoostConfig->withSkillRenderers([...])` in the consumer's `boost.php` OR passed as `extraSkillRenderers` to `SyncEngine::sync()`.
+
+This means the bare-CLI Blade trigger path lives entirely in the consumer's `boost.php` declaration → BladeRenderer's `render()` method, with no engine-side eager-instantiation surface to fix. The earlier "engine-side prevention + wrapper-side self-defense" framing assumed an auto-discovery layer that doesn't exist; the actual fix is wrapper-side container-aware bail only.
+
+### Upgrade notes
+
+`composer update sandermuller/project-boost-laravel` picks it up. Behavior change is additive:
+
+- If your `boost.php` declares `BladeRenderer` in `withSkillRenderers()` AND you've been running bare `vendor/bin/boost sync` (not `php artisan project-boost:sync`) in a Laravel project: you'll now see a clear `RuntimeException` with guidance instead of a cryptic `Container::path()` stack trace. The actionable path is `php artisan project-boost:sync`.
+- If you've been running `php artisan project-boost:sync` only: no behavior change.
+- If your `boost.php` doesn't register `BladeRenderer`: no behavior change. The guard fires only when the renderer is actually invoked.
+
+The diagnostics section header rename from `Project Conventions` to `Diagnostics` is also additive — it changes the label on a previously-named section, doesn't alter what gets rendered into it.
+
+**Full Changelog**: https://github.com/SanderMuller/project-boost-laravel/compare/0.3.5...0.3.6
+
 ## 0.3.5 - 2026-05-28
 
 Bug-fix release. `project-boost:sync` was silently dropping the engine's `SyncResult::diagnostics` channel — operators saw re-renders happen (`wrote CLAUDE.md`) but got no explanation for why. Fix propagates the same diagnostics surface `boost-core`'s own `vendor/bin/boost sync` renders.
@@ -22,6 +74,7 @@ Safe drop-in upgrade from 0.3.4.
   wrote CLAUDE.md
 Sync complete · wrote=1 · deleted=0 · unchanged=118
 
+
 ```
 Same output between "no divergence" and "divergence resolved by re-render" runs. Operator sees the re-render happened but gets no signal explaining the WHY — even when the engine emitted a parseable-divergence warning to the diagnostics channel.
 
@@ -37,6 +90,7 @@ Project Conventions
   ⚠ db-strategy: CLAUDE.md body diverged from boost.php's withConventions(); re-rendered from boost.php as canonical source.
 
 Sync complete · wrote=1 · deleted=0 · unchanged=118
+
 
 ```
 ### Why this surfaced now
@@ -238,6 +292,7 @@ PROJECT_BOOST_SUPPRESS_UPSTREAM=true
 
 
 
+
 ```
 A `CommandStarting` event listener intercepts the `boost:install` command and force-injects `--mcp` if it wasn't already passed. laravel/boost short-circuits its feature-selection step (the gate for its guideline + skill writers) when `--mcp` is set, so the user-visible outcome matches what `--mcp` would have produced.
 
@@ -280,6 +335,7 @@ If you want the defensive `suppress_upstream_writers` guardrail active, add `PRO
 
 ```bash
 php artisan project-boost:where
+
 
 
 
@@ -400,6 +456,7 @@ This package closes those gaps. laravel/boost still owns the MCP server (its cor
 
 ```bash
 composer require --dev sandermuller/project-boost-laravel
+
 
 
 
