@@ -278,7 +278,7 @@ final class SyncCommand extends Command
         }
 
         $this->newLine();
-        $this->line('<fg=cyan>Project Conventions</>');
+        $this->line('<fg=cyan>Diagnostics</>');
         foreach ($result->diagnostics as $diagnostic) {
             $glyph = match ($diagnostic->level) {
                 'error' => '<fg=red>✗</>',

@@ -2,8 +2,11 @@
 
 namespace SanderMuller\ProjectBoostLaravel\Rendering;
 
+use Illuminate\Container\Container;
+use Illuminate\Contracts\Foundation\Application;
 use Laravel\Boost\Concerns\RendersBladeGuidelines;
 use Override;
+use RuntimeException;
 use SanderMuller\BoostCore\Contracts\SkillRenderer;
 use SanderMuller\BoostCore\Skills\Rendering\RenderContext;
 
@@ -36,6 +39,32 @@ final class BladeRenderer implements SkillRenderer
     #[Override]
     public function render(string $raw, RenderContext $ctx): string
     {
+        // Container-bootstrap guard. RendersBladeGuidelines calls
+        // Container::path() (an Application method, not Container) — which
+        // throws "undefined method" if the global container isn't a fully
+        // bootstrapped Laravel Application. That happens when bare
+        // `vendor/bin/boost sync` invokes this renderer via the consumer's
+        // boost.php `withSkillRenderers(BladeRenderer::class)` declaration
+        // without the artisan kernel having bootstrapped the framework.
+        //
+        // Fail fast with an actionable message rather than producing a
+        // cryptic Container::path() error mid-render (which historically
+        // resulted in partial managed-region writes before boost-core 0.9.3
+        // added the render-fail-then-write safety gate).
+        $container = Container::getInstance();
+        if (! $container instanceof Application) {
+            throw new RuntimeException(
+                'BladeRenderer requires a bootstrapped Laravel Application; '
+                . 'the current container is a bare Illuminate\Container. This '
+                . 'typically happens when running `vendor/bin/boost sync` in '
+                . 'a Laravel project. Use `php artisan project-boost:sync` '
+                . 'instead — the artisan entry point bootstraps the framework '
+                . 'before invoking the renderer. To skip Blade rendering '
+                . 'entirely, remove BladeRenderer from your boost.php '
+                . 'withSkillRenderers() declaration.'
+            );
+        }
+
         // Mirrors RendersBladeGuidelines::renderBladeFile but starts from a
         // string instead of reading the file again. Keeps snippet protection
         // + GuidelineAssist binding intact.
