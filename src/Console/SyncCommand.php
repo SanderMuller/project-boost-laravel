@@ -195,6 +195,8 @@ final class SyncCommand extends Command
             $this->warn($attribution);
         }
 
+        $this->renderDiagnostics($result);
+
         if ($result->hasErrors()) {
             $this->newLine();
             $this->error($checkOnly ? 'Errors during dry-run:' : 'Errors during sync:');
@@ -259,6 +261,35 @@ final class SyncCommand extends Command
             count($result->writes),
             $emitterSuffix,
         );
+    }
+
+    /**
+     * Mirror boost-core SyncCommand's `renderConventionsDiagnostics()` so
+     * artisan-wrapped sync output surfaces the same warning/info channel
+     * for parseable-divergence + schema diagnostics. Without this, operators
+     * see the re-render happen (`wrote CLAUDE.md`) but no explanation —
+     * the engine emits to `SyncResult::diagnostics`, which `renderResult()`
+     * silently dropped before 0.3.5.
+     */
+    private function renderDiagnostics(SyncResult $result): void
+    {
+        if ($result->diagnostics === []) {
+            return;
+        }
+
+        $this->newLine();
+        $this->line('<fg=cyan>Project Conventions</>');
+        foreach ($result->diagnostics as $diagnostic) {
+            $glyph = match ($diagnostic->level) {
+                'error' => '<fg=red>✗</>',
+                'warning' => '<fg=yellow>⚠</>',
+                'info' => '<fg=cyan>ℹ</>',
+                default => ' ',
+            };
+            $slot = $diagnostic->slot === null ? '' : "{$diagnostic->slot}: ";
+            $vendor = $diagnostic->vendor === null ? '' : " ({$diagnostic->vendor})";
+            $this->line("  {$glyph} {$slot}{$diagnostic->message}{$vendor}");
+        }
     }
 
     /**
