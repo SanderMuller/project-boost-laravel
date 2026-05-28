@@ -5,6 +5,52 @@ All notable changes to `sandermuller/project-boost-laravel` will be documented i
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.3.5 - 2026-05-28
+
+Bug-fix release. `project-boost:sync` was silently dropping the engine's `SyncResult::diagnostics` channel — operators saw re-renders happen (`wrote CLAUDE.md`) but got no explanation for why. Fix propagates the same diagnostics surface `boost-core`'s own `vendor/bin/boost sync` renders.
+
+Safe drop-in upgrade from 0.3.4.
+
+### What's in
+
+#### `project-boost:sync` now surfaces engine diagnostics
+
+`SyncResult::diagnostics` has been on the engine boundary since `boost-core` 0.8.0 — carrying lenient `error` / `warning` / `info` diagnostics from the conventions-schema layer (parseable-divergence warnings, schema parse failures, scaffold notes). This wrapper's `SyncCommand::renderResult()` never iterated the channel, so operators running `php artisan project-boost:sync` saw only the per-file write summary:
+
+```
+  unchanged AGENTS.md
+  wrote CLAUDE.md
+Sync complete · wrote=1 · deleted=0 · unchanged=118
+
+```
+Same output between "no divergence" and "divergence resolved by re-render" runs. Operator sees the re-render happened but gets no signal explaining the WHY — even when the engine emitted a parseable-divergence warning to the diagnostics channel.
+
+Fix mirrors `boost-core`'s own `SyncCommand::renderConventionsDiagnostics()` pattern: section header `Project Conventions`, ✗/⚠/ℹ glyph per `Diagnostic::level`, slot + vendor decoration when present. Same visual language across `php artisan project-boost:sync` and `vendor/bin/boost sync` invocations, so operators get a consistent diagnostic surface regardless of which entry point they used.
+
+Example post-fix output when the engine emits a divergence warning:
+
+```
+  unchanged AGENTS.md
+  wrote CLAUDE.md
+
+Project Conventions
+  ⚠ db-strategy: CLAUDE.md body diverged from boost.php's withConventions(); re-rendered from boost.php as canonical source.
+
+Sync complete · wrote=1 · deleted=0 · unchanged=118
+
+```
+### Why this surfaced now
+
+`boost-core` 0.9.1 ships the parseable-divergence diagnostic that finally exercised the previously-empty diagnostics channel through this wrapper's call path. The wrapper-side gap had existed since 0.8.0 but went unnoticed because the diagnostics list was always empty in practice. The 0.9.1 verification cycle from a proving consumer (running the engine's adoption pass) caught it explicitly.
+
+### Upgrade notes
+
+`composer update sandermuller/project-boost-laravel` picks it up. Behavior change is additive: when the engine emits diagnostics, they now appear in your sync output. When the engine emits nothing (most syncs that don't touch conventions schema), output is identical to 0.3.4.
+
+If you're invoking `php artisan project-boost:sync` from CI / scripts and depend on parsing the stdout shape, the new `Project Conventions` section appears between the delete-attribution warning (if any) and the final `Sync complete` summary line. Empty diagnostics list = no section emitted.
+
+**Full Changelog**: https://github.com/SanderMuller/project-boost-laravel/compare/0.3.4...0.3.5
+
 ## 0.3.4 - 2026-05-28
 
 Widens the `sandermuller/boost-core` constraint from `^0.8.2` to `^0.8.2 || ^0.9.0` so consumers can adopt the engine's 0.9.0 conventions-source-flip release without waiting for this wrapper to hard-bump. No code change in this package's own surface.
@@ -191,6 +237,7 @@ PROJECT_BOOST_SUPPRESS_UPSTREAM=true
 
 
 
+
 ```
 A `CommandStarting` event listener intercepts the `boost:install` command and force-injects `--mcp` if it wasn't already passed. laravel/boost short-circuits its feature-selection step (the gate for its guideline + skill writers) when `--mcp` is set, so the user-visible outcome matches what `--mcp` would have produced.
 
@@ -233,6 +280,7 @@ If you want the defensive `suppress_upstream_writers` guardrail active, add `PRO
 
 ```bash
 php artisan project-boost:where
+
 
 
 
@@ -352,6 +400,7 @@ This package closes those gaps. laravel/boost still owns the MCP server (its cor
 
 ```bash
 composer require --dev sandermuller/project-boost-laravel
+
 
 
 
