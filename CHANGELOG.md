@@ -5,6 +5,24 @@ All notable changes to `sandermuller/project-boost-laravel` will be documented i
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.3.3 - 2026-05-28
+
+Constraint-floor patch. Bumps `sandermuller/boost-core` from `^0.8.0` to `^0.8.2` so `composer install` / `composer update` pulls the engine version that fixes a destructive `CLAUDE.md` regression.
+
+Safe drop-in upgrade from 0.3.2. No API or behavior change in this package's own surface.
+
+### Why this release
+
+`sandermuller/boost-core` 0.8.0 and 0.8.1 wholesale-overwrote `CLAUDE.md` on every `vendor/bin/boost sync`, wiping the operator-filled `## Project Conventions` block. Root cause was engine-side — `formatGuidelinesContent()` returned concatenated guideline bodies and `FileWriter` wrote the whole file, destroying every region outside the guidelines content. Fix shipped as `boost-core` 0.8.2, converting the guidelines write to the marker-bounded `ManagedRegion` pattern already used by the `.gitignore` and conventions blocks.
+
+This package's `project-boost:sync` wrapper inherits the fix transitively — no wrapper-side code change was needed. The constraint floor bump is the mechanism that forces absorption: a consumer on a locked `boost-core 0.8.0` / `0.8.1` would keep running the buggy engine until they ran `composer update`, so floor-bumping makes the fix mandatory on next install rather than discretionary.
+
+### Upgrade notes
+
+`composer update sandermuller/project-boost-laravel` picks it up. If a downstream project's `CLAUDE.md` was wiped during a run of `boost-core` 0.8.0 / 0.8.1, restoring the `## Project Conventions` block from git history is the only recovery path — there's no incremental migration this release can perform. Going forward (engine 0.8.2+), the block survives every `vendor/bin/boost sync`.
+
+**Full Changelog**: https://github.com/SanderMuller/project-boost-laravel/compare/0.3.2...0.3.3
+
 ## 0.3.2 - 2026-05-27
 
 ### What's in
@@ -127,6 +145,7 @@ PROJECT_BOOST_SUPPRESS_UPSTREAM=true
 
 
 
+
 ```
 A `CommandStarting` event listener intercepts the `boost:install` command and force-injects `--mcp` if it wasn't already passed. laravel/boost short-circuits its feature-selection step (the gate for its guideline + skill writers) when `--mcp` is set, so the user-visible outcome matches what `--mcp` would have produced.
 
@@ -169,6 +188,7 @@ If you want the defensive `suppress_upstream_writers` guardrail active, add `PRO
 
 ```bash
 php artisan project-boost:where
+
 
 
 
@@ -286,6 +306,7 @@ This package closes those gaps. laravel/boost still owns the MCP server (its cor
 
 ```bash
 composer require --dev sandermuller/project-boost-laravel
+
 
 
 
