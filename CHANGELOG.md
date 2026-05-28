@@ -5,6 +5,50 @@ All notable changes to `sandermuller/project-boost-laravel` will be documented i
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.3.4 - 2026-05-28
+
+Widens the `sandermuller/boost-core` constraint from `^0.8.2` to `^0.8.2 || ^0.9.0` so consumers can adopt the engine's 0.9.0 conventions-source-flip release without waiting for this wrapper to hard-bump. No code change in this package's own surface.
+
+Safe drop-in upgrade from 0.3.3.
+
+### Why this release
+
+`sandermuller/boost-core` 0.9.0 moved the operator-edit surface for Project Conventions from a marker-bounded region inside `CLAUDE.md` to a `withConventions([...])` chained method on `BoostConfig` in `boost.php`. CLAUDE.md continues to stay tracked — operator-authored content outside the conventions markers (custom H1, intro prose) is preserved across sync via the same marker-bounded round-trip safety shipped in `boost-core` 0.8.2.
+
+Proving consumers running the engine's 1.7.0 / 0.9.0 adoption cycle (notably hihaho on slot-domain vocabulary and mijntp on Filament/Livewire vocabulary) blocked on this wrapper's `^0.8.2` constraint — Composer refused resolution any time a root require pulled `boost-core ^0.9` while this wrapper transitively pinned `^0.8.2`. Widening the constraint to `^0.8.2 || ^0.9.0` unblocks adoption without forcing consumers still on 0.8.x to migrate.
+
+### What's in
+
+#### Constraint widening (no code change)
+
+| Dependency | Old | New |
+|---|---|---|
+| `sandermuller/boost-core` | `^0.8.2` | `^0.8.2 || ^0.9.0` |
+
+Consumers stay on whichever boost-core minor their root `composer.json` allows; this wrapper now accepts both.
+
+#### Wrapper-side integration with 0.9.0
+
+`project-boost:sync` calls `SyncEngine::default()->sync(injectedVendorSkills: ..., injectedVendorGuidelines: ...)` — the same call signature as in 0.8.x. The engine's 0.9.0 internal flip (`SyncEngine` reads `$config->conventions` from `BoostConfig` instead of extracting from CLAUDE.md) is opaque to the wrapper. The P1 wrapper-merger fix in 0.9.0 (`InjectedVendorMerger::mergeExtraRenderers` now preserves `$config->conventions` during rebuild) does not affect this wrapper's call paths, since `extraSkillRenderers` is not passed by this package per the `SyncCommand` docblock decision to pre-render Blade in the reader pipeline.
+
+The cross-version integration was verified at the source level by the engine maintainer ahead of 0.9.0 tagging; this wrapper inherits the conventions-flip transitively with no code changes.
+
+#### Migration for consumers using `withConventions()`
+
+If you adopt `boost-core 0.9.0` and want to move existing `## Project Conventions` content from `CLAUDE.md` into `boost.php`'s `withConventions([...])`:
+
+> Run `vendor/bin/boost convert-conventions` then commit `boost.php` and `CLAUDE.md` together as a single "Migrate Project Conventions to boost.php" change. CLAUDE.md stays tracked — operator-authored content outside the conventions markers (custom H1, intro prose) is preserved across sync.
+
+The migration command lives at the engine level — invoke `vendor/bin/boost convert-conventions` directly, same pattern as `vendor/bin/boost where`. No artisan wrapper provided.
+
+### Upgrade notes
+
+`composer update sandermuller/project-boost-laravel` picks it up. The wrapper's own resolved boost-core version doesn't change for consumers who weren't trying to bump the engine.
+
+If you want to adopt `boost-core 0.9.0` after this release: bump your root `composer.json` to `sandermuller/boost-core: ^0.9.0` (or widen-OR yourself), then `composer update sandermuller/boost-core`. Run `vendor/bin/boost convert-conventions` if you had a `## Project Conventions` block in CLAUDE.md to migrate.
+
+**Full Changelog**: https://github.com/SanderMuller/project-boost-laravel/compare/0.3.3...0.3.4
+
 ## 0.3.3 - 2026-05-28
 
 Constraint-floor patch. Bumps `sandermuller/boost-core` from `^0.8.0` to `^0.8.2` so `composer install` / `composer update` pulls the engine version that fixes a destructive `CLAUDE.md` regression.
@@ -146,6 +190,7 @@ PROJECT_BOOST_SUPPRESS_UPSTREAM=true
 
 
 
+
 ```
 A `CommandStarting` event listener intercepts the `boost:install` command and force-injects `--mcp` if it wasn't already passed. laravel/boost short-circuits its feature-selection step (the gate for its guideline + skill writers) when `--mcp` is set, so the user-visible outcome matches what `--mcp` would have produced.
 
@@ -188,6 +233,7 @@ If you want the defensive `suppress_upstream_writers` guardrail active, add `PRO
 
 ```bash
 php artisan project-boost:where
+
 
 
 
@@ -306,6 +352,7 @@ This package closes those gaps. laravel/boost still owns the MCP server (its cor
 
 ```bash
 composer require --dev sandermuller/project-boost-laravel
+
 
 
 
