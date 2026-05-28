@@ -35,6 +35,7 @@ _ide_helper_models.php
 .gemini/
 .github/skills/
 .github/prompts/
+.github/copilot-instructions.md
 .junie/skills/
 .kiro/skills/
 .opencode/skills/
@@ -57,9 +58,6 @@ phpstan.neon
 .agents/skills/
 .claude/commands/
 .claude/skills/
-.github/copilot-instructions.md
 .github/prompts/
 .github/skills/
-AGENTS.md
-CLAUDE.md
 # <<< boost (managed) <<<
