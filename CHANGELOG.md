@@ -5,6 +5,43 @@ All notable changes to `sandermuller/project-boost-laravel` will be documented i
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.3.7 - 2026-05-29
+
+Docs-only release. Corrects the auto-sync section to lead with `@php artisan project-boost:sync` as THE composer hook for Laravel projects using this package, and adds a "Why not `BoostAutoSync::run`?" subsection explaining the wrong-entry-point foot-gun.
+
+Safe drop-in upgrade from 0.3.6. No code change.
+
+### What's in
+
+#### `## Auto-sync on composer install` section rewrite
+
+Previous section led with `SanderMuller\BoostCore\Scripts\BoostAutoSync::run` (boost-core's bare-CLI composer hook helper) as the recommended composer post-install hook, with a footnote noting that laravel/boost-bundled skill changes require a separate manual `php artisan project-boost:sync` invocation.
+
+Caught via the mijntp proving consumer ([`iqyla3z3`](https://github.com/sandermuller)) during a setup audit: their `composer.json` carried `BoostAutoSync::run` as the post-install hook (inherited from `boost install` scaffold's Laravel-unaware default emission), and they were silently missing 12+ laravel/boost-bundled skills (`pest-testing`, `livewire-development`, `filament-development`, `inertia-development`, `eloquent-models`, and several more) across their entire `boost-skills` 1.7.0 adoption window. Sync still reported success on every run; nothing in the output surfaced the absence.
+
+Corrected section structure:
+
+- Headlines `@php artisan project-boost:sync` as THE composer hook for Laravel projects using this package. Explains that the artisan-flavored hook routes through this wrapper's injection pipeline and lists the bundled skills the hook surfaces.
+- Adds a `### Why not BoostAutoSync::run?` subsection that explicitly describes the wrong-entry-point foot-gun, why operators typically don't notice (bare-CLI sync still reports success against the smaller skill set; nothing emits "you're missing N skills"), and clarifies that the bare-CLI helper IS correct for non-Laravel projects consuming `boost-core` directly without a wrapper.
+
+The previous wording was technically defensible — it warned consumers to "run `php artisan project-boost:sync` manually" — but it framed manual invocation as a workaround rather than as the canonical composer-hook shape. Operators reading the section reasonably wired `BoostAutoSync::run` and never manually-invoked the artisan command, because the README presented `BoostAutoSync::run` first as if it were the primary recommendation.
+
+#### Belt-and-suspenders with `boost-core` 0.10.0 scaffold-template fix
+
+`boost-core` 0.10.0 (queued upstream as task #62) lands a Laravel-aware composer-hook emission in the `boost install` scaffold: when `composer.json` requires both `laravel/framework` and `sandermuller/project-boost-laravel`, the scaffold emits the artisan-flavored hook by default. Once that ships and fresh installs inherit the right hook, this README guidance becomes consumer-side belt-and-suspenders rather than primary defense.
+
+The README guidance stays even after the scaffold fix, because many consumers won't re-run `boost install` for years after their initial setup — they'd remain on the legacy `BoostAutoSync::run` hook indefinitely unless their `composer.json` is hand-edited. The README is the only mechanism that reaches that population.
+
+### Upgrade notes
+
+`composer update sandermuller/project-boost-laravel` picks it up. No behavior change in the package itself — the docs fix is consumer-facing only.
+
+**Action item for consumers using `BoostAutoSync::run`:** check your `composer.json` `scripts.post-install-cmd` and `scripts.post-update-cmd`. If either uses `SanderMuller\BoostCore\Scripts\BoostAutoSync::run` in a Laravel project where you're consuming `project-boost-laravel`, replace with `@php artisan project-boost:sync`. After the change, your next `composer install` or `composer update` will fan out the laravel/boost-bundled skills (~12 skills typically) that the bare-CLI hook was silently bypassing.
+
+You can verify by running `php artisan project-boost:sync` directly and checking the output for `wrote` lines mentioning paths like `.claude/skills/pest-testing/`, `.claude/skills/livewire-development/`, etc. If those skills appear under `unchanged` (because they were already written by an earlier artisan invocation), great. If they don't appear at all and only show up after this fix, your prior bare-CLI hook was hiding them from your agents.
+
+**Full Changelog**: https://github.com/SanderMuller/project-boost-laravel/compare/0.3.6...0.3.7
+
 ## 0.3.6 - 2026-05-28
 
 Two related bare-CLI-in-Laravel-project fixes landing alongside `boost-core` 0.9.4's diagnostics-rendering improvements.
@@ -29,6 +66,7 @@ project-boost:sync` instead — the artisan entry point bootstraps the
 framework before invoking the renderer. To skip Blade rendering
 entirely, remove BladeRenderer from your boost.php withSkillRenderers()
 declaration.
+
 
 ```
 Combined with the engine's 0.9.3 safety gate (which converts the thrown exception into a `SyncResult::error` rather than letting it propagate mid-write), the worst-case path is now: operator sees a clear message, no partial writes happen, recovery is straightforward.
@@ -75,6 +113,7 @@ Safe drop-in upgrade from 0.3.4.
 Sync complete · wrote=1 · deleted=0 · unchanged=118
 
 
+
 ```
 Same output between "no divergence" and "divergence resolved by re-render" runs. Operator sees the re-render happened but gets no signal explaining the WHY — even when the engine emitted a parseable-divergence warning to the diagnostics channel.
 
@@ -90,6 +129,7 @@ Project Conventions
   ⚠ db-strategy: CLAUDE.md body diverged from boost.php's withConventions(); re-rendered from boost.php as canonical source.
 
 Sync complete · wrote=1 · deleted=0 · unchanged=118
+
 
 
 ```
@@ -293,6 +333,7 @@ PROJECT_BOOST_SUPPRESS_UPSTREAM=true
 
 
 
+
 ```
 A `CommandStarting` event listener intercepts the `boost:install` command and force-injects `--mcp` if it wasn't already passed. laravel/boost short-circuits its feature-selection step (the gate for its guideline + skill writers) when `--mcp` is set, so the user-visible outcome matches what `--mcp` would have produced.
 
@@ -335,6 +376,7 @@ If you want the defensive `suppress_upstream_writers` guardrail active, add `PRO
 
 ```bash
 php artisan project-boost:where
+
 
 
 
@@ -456,6 +498,7 @@ This package closes those gaps. laravel/boost still owns the MCP server (its cor
 
 ```bash
 composer require --dev sandermuller/project-boost-laravel
+
 
 
 
