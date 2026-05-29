@@ -130,16 +130,24 @@ Things to avoid:
 
 ## Auto-sync on `composer install`
 
+In Laravel projects using this package, wire `@php artisan project-boost:sync` into composer's post-install / post-update hooks:
+
 ```jsonc
 {
   "scripts": {
-    "post-install-cmd": ["SanderMuller\\BoostCore\\Scripts\\BoostAutoSync::run"],
-    "post-update-cmd": ["SanderMuller\\BoostCore\\Scripts\\BoostAutoSync::run"]
+    "post-install-cmd": ["@php artisan project-boost:sync"],
+    "post-update-cmd": ["@php artisan project-boost:sync"]
   }
 }
 ```
 
-`BoostAutoSync` fires `vendor/bin/boost sync` only (host + scanned vendors + remote skills), because Laravel's artisan kernel isn't available at composer-script time. For laravel/boost-bundled skill changes, run `php artisan project-boost:sync` manually or wire it into your deploy hook.
+The `@php artisan project-boost:sync` hook routes through this package's wrapper, which walks `vendor/laravel/boost/.ai/`, pre-renders Blade templates with proper container context, and injects laravel/boost-bundled skills (`pest-testing`, `livewire-development`, `filament-development`, `inertia-development`, `eloquent-models`, and the rest) into the SyncEngine call. Without this hook, those bundled skills don't reach your agent directories — host skills + scanned vendors + remote skills still sync, but the laravel/boost set silently doesn't.
+
+### Why not `BoostAutoSync::run`?
+
+`boost-core` ships a `SanderMuller\BoostCore\Scripts\BoostAutoSync::run` composer-script helper that invokes `vendor/bin/boost sync` (bare CLI). In Laravel projects using this package, that helper is the wrong hook: bare CLI bypasses this wrapper's injection pipeline entirely, so the laravel/boost-bundled skill set never reaches your agent directories. Operators who wire `BoostAutoSync::run` into their composer scripts typically don't notice — the bare-CLI sync still reports success, just against a smaller skill set than the wrapper would have surfaced. Use `@php artisan project-boost:sync` instead.
+
+(For non-Laravel projects consuming `boost-core` directly without a wrapper, `BoostAutoSync::run` IS the correct hook. The guidance above is Laravel-app-specific.)
 
 ## Defensive flag: `suppress_upstream_writers`
 
