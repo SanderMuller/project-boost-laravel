@@ -5,6 +5,57 @@ All notable changes to `sandermuller/project-boost-laravel` will be documented i
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.3.8 - 2026-05-29
+
+<!-- verified-sha: 8f8c12b986dbc4c320a0f19250e92b2d5ad8ee78 -->
+Open beat for the `boost-core` 0.10.x line per the widened-OR lifecycle pattern. Widens the `sandermuller/boost-core` constraint from `^0.8.2 || ^0.9.0` to `^0.8.2 || ^0.9.0 || ^0.10.0` so consumers can adopt `boost-core` 0.10.x (the wrong-entry-point cycle's fixes) without waiting for a hard floor bump.
+
+Safe drop-in upgrade from 0.3.7. No code change in this package's own surface.
+
+### Why this release
+
+`boost-core` 0.10.0 just shipped the wrong-entry-point cycle's coordinated improvements:
+
+- **Laravel-aware composer-hook scaffold** — `boost install` now detects Laravel + `project-boost-laravel` context and emits `@php artisan project-boost:sync` instead of `BoostAutoSync::run` for fresh installs. Closes the foot-gun that mijntp inherited and was silently missing 10+ laravel/boost-bundled skills.
+- **`boost doctor` Entry-point mismatch banner** — when bare CLI runs in a Laravel project where `project-boost-laravel` is present, doctor now surfaces a banner pointing operators at the artisan-flavored hook with explicit cross-agent-asymmetry context (Claude Code's MCP server may mask the absence while Cursor / Copilot / Codex silently miss).
+- **Three-case diagnostic-copy split for "possible typo" tag warnings** — case 2 names the bare-CLI-without-wrapper-injection scenario explicitly, including the cross-agent dimension.
+
+Consumers using this wrapper benefit from the engine-side improvements (banner, diagnostic copy, scaffold fix) the moment they bump `boost-core` to 0.10.x. The wrapper itself needs no behavior changes — the engine improvements operate at engine surfaces (CLI banner, diagnostic strings, scaffold output) that this wrapper doesn't override.
+
+Caught by mijntp proving consumer ([`iqyla3z3`](https://github.com/sandermuller)) on PR #5057: their `composer require --dev sandermuller/boost-core:^0.10` plus `sandermuller/project-boost-laravel:^0.3.7` resolved to a constraint conflict because this wrapper's `^0.8.2 || ^0.9.0` doesn't accept 0.10.x. Same wrapper-pin-lag chain-blocker shape from the `boost-core 0.9.0` cycle that 0.3.4 unblocked via the original widened-OR move. Pattern repeats.
+
+### What's in
+
+#### Constraint widening (no code change)
+
+| Dependency | Old | New |
+|---|---|---|
+| `sandermuller/boost-core` | `^0.8.2 \|\| ^0.9.0` | `^0.8.2 \|\| ^0.9.0 \|\| ^0.10.0` |
+
+Consumers stay on whichever `boost-core` minor their root `composer.json` allows; this wrapper now accepts all three.
+
+#### Open beat per widened-OR lifecycle
+
+Per the family strategy doc's widened-OR lifecycle pattern (authored by `pszozhdu` (`package-boost-php`) and folded mid-cycle):
+
+- **Open** — the OR widen ships as a patch on the wrapper; existing `^0.9.0` consumers continue to resolve, new `^0.10.0` consumers become possible. ← This release.
+- **Absorb (one or more)** — `boost-core` 0.10.x stable-line evolution absorbs transparently via the OR; the wrapper ships patches whenever upstream produces visible-to-consumer state.
+- **Close** — when the close-decision conditions hold (upstream higher-bound stabilized + no known active consumers in lower-bound sub-range + maintenance cost non-trivial), narrow the constraint as a minor bump.
+
+Three-clause OR is at the compound-OR retention policy boundary (default N=3). Future widens (when `boost-core` 0.11.x ships) will require closing one of the existing clauses; the `^0.8.2` close beat is the natural candidate when its close conditions clearly hold.
+
+#### Wrapper-side integration with 0.10.x
+
+`project-boost:sync` calls `SyncEngine::default()->sync(injectedVendorSkills: ..., injectedVendorGuidelines: ...)` — the same call signature as in 0.8.x and 0.9.x. The engine's 0.10.0 internal changes (banner emission via `DoctorCommand`, diagnostic-copy split via the typo-check surface, scaffold-template detection via `InstallCommand`) are opaque to the wrapper. The engine maintainer (`6scam1ri`) confirmed wrapper-side integration ahead of 0.10.0 tagging; this wrapper inherits the engine improvements transitively with no code changes.
+
+### Upgrade notes
+
+`composer update sandermuller/project-boost-laravel` picks it up. The wrapper's own resolved `boost-core` version doesn't change for consumers who weren't trying to bump the engine.
+
+If you want to adopt `boost-core 0.10.x` after this release: bump your root `composer.json` to `sandermuller/boost-core: ^0.10.0` (or widen-OR yourself), then `composer update sandermuller/boost-core`. The engine-side improvements (banner, diagnostic copy, scaffold fix) become visible at sync time.
+
+**Full Changelog**: https://github.com/SanderMuller/project-boost-laravel/compare/0.3.7...0.3.8
+
 ## 0.3.7 - 2026-05-29
 
 Docs-only release. Corrects the auto-sync section to lead with `@php artisan project-boost:sync` as THE composer hook for Laravel projects using this package, and adds a "Why not `BoostAutoSync::run`?" subsection explaining the wrong-entry-point foot-gun.
@@ -68,6 +119,7 @@ entirely, remove BladeRenderer from your boost.php withSkillRenderers()
 declaration.
 
 
+
 ```
 Combined with the engine's 0.9.3 safety gate (which converts the thrown exception into a `SyncResult::error` rather than letting it propagate mid-write), the worst-case path is now: operator sees a clear message, no partial writes happen, recovery is straightforward.
 
@@ -114,6 +166,7 @@ Sync complete · wrote=1 · deleted=0 · unchanged=118
 
 
 
+
 ```
 Same output between "no divergence" and "divergence resolved by re-render" runs. Operator sees the re-render happened but gets no signal explaining the WHY — even when the engine emitted a parseable-divergence warning to the diagnostics channel.
 
@@ -129,6 +182,7 @@ Project Conventions
   ⚠ db-strategy: CLAUDE.md body diverged from boost.php's withConventions(); re-rendered from boost.php as canonical source.
 
 Sync complete · wrote=1 · deleted=0 · unchanged=118
+
 
 
 
@@ -334,6 +388,7 @@ PROJECT_BOOST_SUPPRESS_UPSTREAM=true
 
 
 
+
 ```
 A `CommandStarting` event listener intercepts the `boost:install` command and force-injects `--mcp` if it wasn't already passed. laravel/boost short-circuits its feature-selection step (the gate for its guideline + skill writers) when `--mcp` is set, so the user-visible outcome matches what `--mcp` would have produced.
 
@@ -376,6 +431,7 @@ If you want the defensive `suppress_upstream_writers` guardrail active, add `PRO
 
 ```bash
 php artisan project-boost:where
+
 
 
 
@@ -498,6 +554,7 @@ This package closes those gaps. laravel/boost still owns the MCP server (its cor
 
 ```bash
 composer require --dev sandermuller/project-boost-laravel
+
 
 
 
