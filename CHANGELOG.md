@@ -5,6 +5,52 @@ All notable changes to `sandermuller/project-boost-laravel` will be documented i
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.4.0 - 2026-05-30
+
+<!-- verified-sha: 37f9ca9c248c6260fab3c59f067ce919ad4bfbe5 -->
+Two precision improvements to what this wrapper puts on disk, plus the floor bump to `boost-core` 0.11.0 that one of them requires.
+
+- **Guidelines are now install-gated** — an app only receives guidelines for packages it actually installed.
+- **The wrapper declares its emit surface** — a stray bare-CLI `boost sync` no longer flags this wrapper's injected skill files for deletion.
+
+Floor bump: `sandermuller/boost-core` `^0.11.0` (was `^0.8.2 || ^0.9.0 || ^0.10.0`).
+
+### Added
+
+#### `BoostWrapper` — bare-CLI drift protection
+
+This package injects laravel/boost-bundled skills into `boost-core`'s `SyncEngine` at sync time. The resulting `<agent-skill-dir>/<name>/SKILL.md` files live on disk afterward. A bare `vendor/bin/boost sync` (no wrapper injection args) used to see those files with no backing source and flag every one as stale-to-delete.
+
+`boost-core` 0.11.0 introduced `BoostWrapperContract` to close that false-positive. This release ships `SanderMuller\ProjectBoostLaravel\BoostWrapper` implementing it: `injectedEmitPaths()` enumerates the laravel/boost-bundled skill names and maps each across the active agents' skill directories (resolved through `boost-core`'s own `AgentTarget` API, so the layout stays in lockstep across engine versions), declaring the set so the cleanup pass preserves them.
+
+The shared `.agents/skills/` pool (Copilot, Codex, and the other shared-pool agents) is declared once, not per-agent. Scope is deletion-exclusion only — a bare CLI still won't *(re)emit* the laravel/boost set, so `php artisan project-boost:sync` remains the correct hook; `boost doctor`'s entry-point banner continues to point operators there.
+
+### Fixed
+
+#### Install-gated guideline emission
+
+`LaravelBoostGuidelineReader` walked the entire `vendor/laravel/boost/.ai/` tree and emitted every package's guidelines unconditionally. A Livewire + Filament + PHPUnit app would receive Inertia, Pest, and Sail guidelines it never installed — and `pest-core` directly contradicts `phpunit-core`, so the noise was also a correctness problem.
+
+The new `LaravelBoostGuidelineGate` mirrors laravel/boost's own `GuidelineComposer` / `DiscoverPackagePaths` detection:
+
+- only core guidelines + guidelines for packages the host actually installed are emitted;
+- PHPUnit-vs-Pest and Flux-free-vs-Flux-pro priority (the higher-priority package shadows the other);
+- Boost and Sail excluded from package discovery (Boost is a core guideline already; Sail is opt-in);
+- MCP and Livewire counted only as direct requirements.
+
+The reader takes an optional gate; when `laravel/roster` can't resolve the host's packages the gate is permissive (emit-all), so there is no regression on detection-unavailable setups. `project-boost:sync` scans the host roster once and shares it with both the version resolver and the gate.
+
+Surfaced by a real-world downstream consumer whose Livewire/Filament/PHPUnit stack received the contradicting test-framework guidance.
+
+### Upgrade notes
+
+`composer update sandermuller/project-boost-laravel` picks it up, pulling `boost-core` 0.11.0. After the update:
+
+- Apps will see fewer guidelines emitted — only those matching installed packages. This is the intended fix; a guideline that disappeared was for a package you don't have.
+- Bare-CLI `boost sync` runs stop deleting this wrapper's injected skill files. Sync through `php artisan project-boost:sync` as before for the full injected set.
+
+**Full Changelog**: https://github.com/SanderMuller/project-boost-laravel/compare/0.3.8...0.4.0
+
 ## 0.3.8 - 2026-05-29
 
 <!-- verified-sha: 8f8c12b986dbc4c320a0f19250e92b2d5ad8ee78 -->
@@ -120,6 +166,7 @@ declaration.
 
 
 
+
 ```
 Combined with the engine's 0.9.3 safety gate (which converts the thrown exception into a `SyncResult::error` rather than letting it propagate mid-write), the worst-case path is now: operator sees a clear message, no partial writes happen, recovery is straightforward.
 
@@ -167,6 +214,7 @@ Sync complete · wrote=1 · deleted=0 · unchanged=118
 
 
 
+
 ```
 Same output between "no divergence" and "divergence resolved by re-render" runs. Operator sees the re-render happened but gets no signal explaining the WHY — even when the engine emitted a parseable-divergence warning to the diagnostics channel.
 
@@ -182,6 +230,7 @@ Project Conventions
   ⚠ db-strategy: CLAUDE.md body diverged from boost.php's withConventions(); re-rendered from boost.php as canonical source.
 
 Sync complete · wrote=1 · deleted=0 · unchanged=118
+
 
 
 
@@ -389,6 +438,7 @@ PROJECT_BOOST_SUPPRESS_UPSTREAM=true
 
 
 
+
 ```
 A `CommandStarting` event listener intercepts the `boost:install` command and force-injects `--mcp` if it wasn't already passed. laravel/boost short-circuits its feature-selection step (the gate for its guideline + skill writers) when `--mcp` is set, so the user-visible outcome matches what `--mcp` would have produced.
 
@@ -431,6 +481,7 @@ If you want the defensive `suppress_upstream_writers` guardrail active, add `PRO
 
 ```bash
 php artisan project-boost:where
+
 
 
 
@@ -554,6 +605,7 @@ This package closes those gaps. laravel/boost still owns the MCP server (its cor
 
 ```bash
 composer require --dev sandermuller/project-boost-laravel
+
 
 
 
