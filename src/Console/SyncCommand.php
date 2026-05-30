@@ -3,6 +3,7 @@
 namespace SanderMuller\ProjectBoostLaravel\Console;
 
 use Illuminate\Console\Command;
+use Laravel\Roster\Roster;
 use SanderMuller\BoostCore\Skills\Guideline;
 use SanderMuller\BoostCore\Skills\Skill;
 use SanderMuller\BoostCore\Sync\EmitterAction;
@@ -10,6 +11,7 @@ use SanderMuller\BoostCore\Sync\SyncEngine;
 use SanderMuller\BoostCore\Sync\SyncResult;
 use SanderMuller\BoostCore\Sync\WriteAction;
 use SanderMuller\ProjectBoostLaravel\Discovery\LaravelBoostAssetReader;
+use SanderMuller\ProjectBoostLaravel\Discovery\LaravelBoostGuidelineGate;
 use SanderMuller\ProjectBoostLaravel\Discovery\LaravelBoostGuidelineReader;
 use SanderMuller\ProjectBoostLaravel\Discovery\LaravelBoostTagManifest;
 use SanderMuller\ProjectBoostLaravel\Discovery\VersionResolver;
@@ -48,16 +50,25 @@ final class SyncCommand extends Command
         $blade = new BladeRenderer();
         $manifestPath = dirname(__DIR__, 2) . '/resources/boost/laravel-boost-tags.yaml';
         $manifest = LaravelBoostTagManifest::fromFile($manifestPath);
+        $aiRoot = base_path('vendor/laravel/boost/.ai');
+
+        // Scan the host roster once and share it with both the version
+        // resolver (per-major skill dedupe) and the guideline install-gate
+        // (suppresses guidelines for packages the host hasn't installed).
+        $roster = class_exists(Roster::class) ? Roster::scan(base_path()) : null;
 
         $skillReader = new LaravelBoostAssetReader(
-            laravelBoostAiRoot: base_path('vendor/laravel/boost/.ai'),
+            laravelBoostAiRoot: $aiRoot,
             tagManifest: $manifest,
             bladeRenderer: $blade,
         );
         $guidelineReader = new LaravelBoostGuidelineReader(
-            laravelBoostAiRoot: base_path('vendor/laravel/boost/.ai'),
+            laravelBoostAiRoot: $aiRoot,
             tagManifest: $manifest,
             bladeRenderer: $blade,
+            installGate: $roster instanceof Roster
+                ? LaravelBoostGuidelineGate::fromRoster($roster, $aiRoot)
+                : LaravelBoostGuidelineGate::permissive(),
         );
 
         $allSkills = $skillReader->readSkills();
@@ -78,7 +89,7 @@ final class SyncCommand extends Command
         // before injection. VersionResolver uses laravel/roster to match
         // the host's installed major when possible; falls back to lex-last
         // sourcePath when Roster can't resolve.
-        $skills = VersionResolver::withHostRoster(base_path())->resolve($allSkills);
+        $skills = (new VersionResolver($roster))->resolve($allSkills);
 
         // Guideline dedupe — same shape as skills. core.blade.php for a
         // package is one name; per-major guideline files include the major

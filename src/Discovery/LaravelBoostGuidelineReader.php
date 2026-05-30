@@ -22,6 +22,13 @@ use Throwable;
  *
  * Render failures accumulate in `renderErrors()` (out-param style); the
  * offending guideline is skipped, matching boost-core's lenient default.
+ *
+ * An optional `LaravelBoostGuidelineGate` install-gates emission so only the
+ * core guidelines + guidelines for packages the host actually installed are
+ * read — without it the Finder walks the whole vendor `.ai/` tree and emits
+ * every package's guidelines unconditionally (a Livewire/Filament/PHPUnit app
+ * would receive inertia/pest/sail guidelines, with `pest-core` contradicting
+ * `phpunit-core`). A null gate preserves the pre-gate emit-all behaviour.
  */
 final class LaravelBoostGuidelineReader
 {
@@ -32,6 +39,7 @@ final class LaravelBoostGuidelineReader
         private readonly string $laravelBoostAiRoot,
         private readonly LaravelBoostTagManifest $tagManifest,
         private readonly ?SkillRenderer $bladeRenderer = null,
+        private readonly ?LaravelBoostGuidelineGate $installGate = null,
     ) {}
 
     /**
@@ -57,6 +65,11 @@ final class LaravelBoostGuidelineReader
             ->files();
 
         foreach ($finder as $file) {
+            if ($this->installGate instanceof LaravelBoostGuidelineGate
+                && ! $this->installGate->allows($this->segmentFromPath($file))) {
+                continue;
+            }
+
             $guideline = $this->buildGuideline($file);
             if ($guideline instanceof Guideline) {
                 $guidelines[] = $guideline;
@@ -64,6 +77,29 @@ final class LaravelBoostGuidelineReader
         }
 
         return $guidelines;
+    }
+
+    /**
+     * Top-level `.ai/` path segment a guideline file belongs to — the `<pkg>`
+     * dir for `<pkg>/core.blade.php` (and `<pkg>/<major>/*.blade.php`), or the
+     * extension-stripped basename for a loose `<name>.blade.php` (e.g.
+     * `foundation.blade.php` → `foundation`). This is the key the install gate
+     * matches against.
+     */
+    private function segmentFromPath(SplFileInfo $file): string
+    {
+        $relative = ltrim(
+            substr($file->getPathname(), strlen($this->laravelBoostAiRoot)),
+            DIRECTORY_SEPARATOR,
+        );
+
+        $parts = explode(DIRECTORY_SEPARATOR, $relative);
+
+        if (count($parts) === 1) {
+            return preg_replace('/\.blade\.php$/', '', $parts[0]) ?? $parts[0];
+        }
+
+        return $parts[0];
     }
 
     /**
