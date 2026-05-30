@@ -5,6 +5,27 @@ All notable changes to `sandermuller/project-boost-laravel` will be documented i
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.4.1 - 2026-05-30
+
+<!-- verified-sha: a0fe7d9ad5b2b410f36afc23fd5f6e8ccd1ab126 -->
+Fixes a regression in 0.4.0's guideline install-gate: it dropped `herd-core` (and any other guideline whose source isn't a Composer package) for every consumer.
+
+### Fixed
+
+#### Install-gate no longer drops non-Composer-package guidelines
+
+0.4.0's `LaravelBoostGuidelineGate` was an allow-list — a guideline segment was emitted only if it was a core guideline or mapped to an installed Composer package. But some guidelines laravel/boost ships aren't gated on package presence at all: `herd-core` is gated on runtime detection (a `.test` app URL + the Herd binary), and `enforce-tests` on install-time config. The gate had no signal for those, so it denied them — dropping `herd-core` for every consumer, including those serving via Herd. Unlike an over-emitted guideline, a dropped one has no `withExcludedGuidelines` lever to add it back.
+
+The gate is now a deny-list: a segment is suppressed only when it maps to a known Composer package (any `laravel/roster` `Packages` case) the host hasn't installed, or that priority/exclusion filtering removed. Segments that aren't Composer packages — `herd`, `enforce-tests` — pass through.
+
+0.4.0's package-gating fix is unchanged: `inertia`, `pest`, `sail`, `pennant`, and the rest are Composer packages, so they stay gated out when uninstalled. A Livewire + Filament + PHPUnit app still won't receive Inertia/Pest/Sail guidance, and `pest-core` still won't contradict `phpunit-core` — but a Herd user keeps `herd-core`.
+
+#### Known limitation (unchanged from 0.4.0)
+
+Version-major sub-fragments (`laravel/11` vs `laravel/12`, `php/8.x`) are not yet scoped to the host's installed major — they key on the top-level package segment only, so all majors still emit. Tracked for a later faithful-mirror pass. If you're on a single major and want only its fragment, keep the corresponding `withExcludedGuidelines` entries for now.
+
+**Full Changelog**: https://github.com/SanderMuller/project-boost-laravel/compare/0.4.0...0.4.1
+
 ## 0.4.0 - 2026-05-30
 
 <!-- verified-sha: 37f9ca9c248c6260fab3c59f067ce919ad4bfbe5 -->
@@ -167,6 +188,7 @@ declaration.
 
 
 
+
 ```
 Combined with the engine's 0.9.3 safety gate (which converts the thrown exception into a `SyncResult::error` rather than letting it propagate mid-write), the worst-case path is now: operator sees a clear message, no partial writes happen, recovery is straightforward.
 
@@ -215,6 +237,7 @@ Sync complete · wrote=1 · deleted=0 · unchanged=118
 
 
 
+
 ```
 Same output between "no divergence" and "divergence resolved by re-render" runs. Operator sees the re-render happened but gets no signal explaining the WHY — even when the engine emitted a parseable-divergence warning to the diagnostics channel.
 
@@ -230,6 +253,7 @@ Project Conventions
   ⚠ db-strategy: CLAUDE.md body diverged from boost.php's withConventions(); re-rendered from boost.php as canonical source.
 
 Sync complete · wrote=1 · deleted=0 · unchanged=118
+
 
 
 
@@ -439,6 +463,7 @@ PROJECT_BOOST_SUPPRESS_UPSTREAM=true
 
 
 
+
 ```
 A `CommandStarting` event listener intercepts the `boost:install` command and force-injects `--mcp` if it wasn't already passed. laravel/boost short-circuits its feature-selection step (the gate for its guideline + skill writers) when `--mcp` is set, so the user-visible outcome matches what `--mcp` would have produced.
 
@@ -481,6 +506,7 @@ If you want the defensive `suppress_upstream_writers` guardrail active, add `PRO
 
 ```bash
 php artisan project-boost:where
+
 
 
 
@@ -605,6 +631,7 @@ This package closes those gaps. laravel/boost still owns the MCP server (its cor
 
 ```bash
 composer require --dev sandermuller/project-boost-laravel
+
 
 
 
