@@ -8,9 +8,9 @@ use Laravel\Roster\Roster;
 
 /**
  * Install-gate for laravel/boost guideline emission. Mirrors laravel/boost's
- * `GuidelineComposer` detection: only the core guidelines plus the guidelines
- * for packages actually installed in the host project are emitted, applying the
- * same priority + exclusion rules laravel/boost uses —
+ * `GuidelineComposer` detection: it suppresses guidelines for composer packages
+ * the host hasn't installed, applying the same priority + exclusion rules
+ * laravel/boost uses —
  *
  *  - `PEST` excludes `PHPUNIT`, `FLUXUI_PRO` excludes `FLUXUI_FREE` (priority);
  *  - `BOOST` + `SAIL` are excluded from package discovery (boost is a core
@@ -30,11 +30,21 @@ use Laravel\Roster\Roster;
  *
  * The gate operates on the top-level `.ai/` path segment of each guideline (the
  * `<pkg>` dir for `<pkg>/core.blade.php`, or the basename for a loose
- * `<name>.blade.php`); conditional guidelines laravel/boost gates on
- * interactive install config (`herd`, `sail`, `enforce-tests`, the
- * `laravel/style|api|localization` variants) are not in the allow-set and so
- * stay out — matching laravel/boost, which only emits them when its
- * `GuidelineConfig` conditions hold.
+ * `<name>.blade.php`). It is deliberately a DENY-list, not an allow-list: a
+ * segment is suppressed only when it maps to a known composer package the host
+ * hasn't installed (or that priority / exclusion filtering removed). Segments
+ * outside the composer-package universe pass through — `herd` and
+ * `enforce-tests` are gated by laravel/boost on RUNTIME detection (Herd binary,
+ * `.test` URL, install-time config), not composer presence, so a
+ * package-presence gate has no signal to judge them. Denying them would lose
+ * guidance with no `withExcludedGuidelines` add-back lever (an asymmetry: the
+ * config can remove a fragment but never re-add one), so they pass. `sail`
+ * stays gated because it IS a composer package (`Packages::SAIL`) excluded from
+ * discovery — matching laravel/boost's Sail-is-opt-in behaviour.
+ *
+ * Version-major sub-fragments (`laravel/11` vs `laravel/12`, `php/8.x`) are NOT
+ * yet host-major-scoped — they key on the top-level segment only, so all majors
+ * still emit. Tracked as a separate faithful-mirror follow-up.
  */
 final readonly class LaravelBoostGuidelineGate
 {
@@ -69,9 +79,17 @@ final readonly class LaravelBoostGuidelineGate
      * @param  array<string, true>|null  $allowedPackageDirs  normalized package
      *   dir names that survived install + priority + exclusion filtering, keyed
      *   for O(1) lookup. Null = permissive (emit all — Roster unavailable).
+     * @param  array<string, true>  $knownPackageDirs  every dir name that maps
+     *   to a `Packages` enum case — the universe of composer-package guideline
+     *   dirs. A segment is denied only if it is in this universe but NOT in
+     *   `$allowedPackageDirs`; segments outside it (e.g. `herd`, `enforce-tests`
+     *   — gated by laravel/boost on runtime detection, not composer presence)
+     *   pass through, since the package gate has no signal to judge them and
+     *   dropping them would lose guidance with no add-back lever.
      */
     private function __construct(
         private ?array $allowedPackageDirs,
+        private array $knownPackageDirs = [],
     ) {}
 
     /**
@@ -105,7 +123,25 @@ final readonly class LaravelBoostGuidelineGate
             }
         }
 
-        return new self($allowed);
+        return new self($allowed, self::knownPackageDirs());
+    }
+
+    /**
+     * Every guideline dir name that maps to a `Packages` enum case — the
+     * universe of composer-package guideline dirs laravel/boost can ship.
+     * Used to distinguish "known package the host hasn't installed" (deny)
+     * from "not a composer package at all" (pass through).
+     *
+     * @return array<string, true>
+     */
+    private static function knownPackageDirs(): array
+    {
+        $dirs = [];
+        foreach (Packages::cases() as $case) {
+            $dirs[self::normalizePackageName($case->name)] = true;
+        }
+
+        return $dirs;
     }
 
     /**
@@ -123,7 +159,13 @@ final readonly class LaravelBoostGuidelineGate
             return true;
         }
 
-        return isset($this->allowedPackageDirs[$segment]);
+        // Deny only a segment that maps to a known composer package the host
+        // hasn't installed (or that priority/exclusion filtered out). Segments
+        // outside the composer-package universe — `herd`, `enforce-tests`, and
+        // anything laravel/boost gates on runtime detection rather than package
+        // presence — pass through: the gate has no signal to judge them, and
+        // dropping a shipped fragment loses guidance with no add-back lever.
+        return ! (isset($this->knownPackageDirs[$segment]) && ! isset($this->allowedPackageDirs[$segment]));
     }
 
     /**

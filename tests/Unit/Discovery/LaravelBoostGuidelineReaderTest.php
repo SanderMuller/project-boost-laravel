@@ -132,6 +132,35 @@ test('install gate suppresses guidelines for packages the host has not installed
     expect($names)->toBe(['foundation', 'phpunit-core']);
 });
 
+test('install gate keeps non-composer-package guidelines like herd while gating uninstalled packages', function (): void {
+    // Regression: herd is not a composer package, so the gate must not drop
+    // herd-core (laravel/boost gates it on runtime detection). collectiq lost
+    // herd-core on 0.4.0 despite serving via Herd.
+    $root = guidelineFixtureRoot();
+    writeGuideline($root, 'foundation.blade.php');
+    writeGuideline($root, 'herd/core.blade.php');
+    writeGuideline($root, 'phpunit/core.blade.php');
+    writeGuideline($root, 'inertia-laravel/core.blade.php');
+
+    $gate = LaravelBoostGuidelineGate::fromRoster(
+        readerRoster([[Packages::PHPUNIT, true]]),
+        $root,
+    );
+
+    $reader = new LaravelBoostGuidelineReader(
+        $root,
+        new LaravelBoostTagManifest(),
+        passthroughBladeRenderer(),
+        $gate,
+    );
+
+    $names = array_map(fn (Guideline $g): string => $g->name, $reader->readGuidelines());
+    sort($names);
+
+    // herd-core kept (non-package), inertia gated (uninstalled package).
+    expect($names)->toBe(['foundation', 'herd-core', 'phpunit-core']);
+});
+
 test('install gate applies PEST-over-PHPUNIT priority to per-package guidelines', function (): void {
     $root = guidelineFixtureRoot();
     writeGuideline($root, 'pest/core.blade.php');

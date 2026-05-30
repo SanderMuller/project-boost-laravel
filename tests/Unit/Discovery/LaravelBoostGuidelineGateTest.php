@@ -158,6 +158,20 @@ test('LIVEWIRE counts only as a direct requirement', function (): void {
         ->and($direct->allows('livewire'))->toBeTrue();
 });
 
+test('passes non-composer-package segments like herd (no false guidance loss)', function (): void {
+    // herd is a runtime/dev tool, not a composer package — laravel/boost gates
+    // herd-core on runtime detection (.test URL + Herd binary), which a
+    // package-presence gate has no signal for. Dropping it loses guidance with
+    // no withExcludedGuidelines add-back lever, so the gate must pass it.
+    // (collectiq regression report against 0.4.0.)
+    $root = gateAiRoot(['herd', 'inertia-laravel']);
+    $gate = LaravelBoostGuidelineGate::fromRoster(gateRoster([]), $root);
+
+    expect($gate->allows('herd'))->toBeTrue()
+        ->and($gate->allows('enforce-tests'))->toBeTrue()
+        ->and($gate->allows('inertia-laravel'))->toBeFalse();
+});
+
 test('a package whose dir is absent from .ai is not allowed', function (): void {
     // Pennant installed but the fixture ships no pennant dir.
     $root = gateAiRoot(['phpunit']);
