@@ -5,6 +5,33 @@ All notable changes to `sandermuller/project-boost-laravel` will be documented i
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.5.0 - 2026-05-31
+
+<!-- verified-sha: 309e2c02a552c19f921f7d4b3c36aaeb693fec78 -->
+Scopes version-major guideline fragments to the host's installed major — resolving the known limitation carried since 0.4.0. The guideline install-gate now mirrors `laravel/boost`'s `GuidelineComposer` faithfully on the version axis, not just package presence.
+
+### Changed
+
+#### Version-major guideline scoping
+
+The install-gate (added in 0.4.0) keyed only on the top-level package segment, so every version-major sub-fragment emitted regardless of the host's actual major:
+
+- a Laravel 12 app received BOTH `laravel/11` and `laravel/12` guidance;
+- a host received every `php/8.x` fragment (`php/8.2` … `php/8.5`) even though `laravel/boost` composes only `php/core`, never the per-version dirs.
+
+`laravel/boost`'s `GuidelineComposer` composes only `<dir>/{majorVersion}` for a package guideline dir (the host's installed major), and composes no version subdir for non-package dirs (it emits `php/core`, never `php/8.x`). This release matches that:
+
+- **Package version dirs** — `<pkg>/<version>/…` emits only when `<pkg>` is an installed, gate-allowed package AND `<version>` is its host major (resolved via `Laravel\Roster\Roster`'s `majorVersion()`). A Laravel 12 app gets `laravel/12` guidance; `laravel/11` is dropped.
+- **Non-package version dirs** — `php/8.x` and any other version subdir under a dir that isn't a Composer package are dropped entirely. Only the top-level `php/core` emits, exactly as `laravel/boost` composes it.
+
+`LaravelBoostGuidelineReader` extracts the version sub-segment from each guideline path and passes it to the gate; the gate decides per the rule above. Package-presence gating, priority/exclusion rules, and the non-Composer-package pass-through (herd, enforce-tests) from 0.4.0/0.4.1 are unchanged.
+
+### Upgrade notes
+
+`composer update sandermuller/project-boost-laravel` then `php artisan project-boost:sync`. After the update you'll see fewer guideline fragments — wrong-major package guidance and per-version PHP fragments stop emitting. If you were carrying `withExcludedGuidelines` entries for off-major or `php/8.x` fragments (e.g. `laravel-11-core` on a Laravel 12 app, `php-8.2-core`), you can drop them — the gate now handles those.
+
+**Full Changelog**: https://github.com/SanderMuller/project-boost-laravel/compare/0.4.1...0.5.0
+
 ## 0.4.1 - 2026-05-30
 
 <!-- verified-sha: a0fe7d9ad5b2b410f36afc23fd5f6e8ccd1ab126 -->
@@ -189,6 +216,7 @@ declaration.
 
 
 
+
 ```
 Combined with the engine's 0.9.3 safety gate (which converts the thrown exception into a `SyncResult::error` rather than letting it propagate mid-write), the worst-case path is now: operator sees a clear message, no partial writes happen, recovery is straightforward.
 
@@ -238,6 +266,7 @@ Sync complete · wrote=1 · deleted=0 · unchanged=118
 
 
 
+
 ```
 Same output between "no divergence" and "divergence resolved by re-render" runs. Operator sees the re-render happened but gets no signal explaining the WHY — even when the engine emitted a parseable-divergence warning to the diagnostics channel.
 
@@ -253,6 +282,7 @@ Project Conventions
   ⚠ db-strategy: CLAUDE.md body diverged from boost.php's withConventions(); re-rendered from boost.php as canonical source.
 
 Sync complete · wrote=1 · deleted=0 · unchanged=118
+
 
 
 
@@ -464,6 +494,7 @@ PROJECT_BOOST_SUPPRESS_UPSTREAM=true
 
 
 
+
 ```
 A `CommandStarting` event listener intercepts the `boost:install` command and force-injects `--mcp` if it wasn't already passed. laravel/boost short-circuits its feature-selection step (the gate for its guideline + skill writers) when `--mcp` is set, so the user-visible outcome matches what `--mcp` would have produced.
 
@@ -506,6 +537,7 @@ If you want the defensive `suppress_upstream_writers` guardrail active, add `PRO
 
 ```bash
 php artisan project-boost:where
+
 
 
 
@@ -631,6 +663,7 @@ This package closes those gaps. laravel/boost still owns the MCP server (its cor
 
 ```bash
 composer require --dev sandermuller/project-boost-laravel
+
 
 
 
