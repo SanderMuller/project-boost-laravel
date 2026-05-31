@@ -66,7 +66,7 @@ final class LaravelBoostGuidelineReader
 
         foreach ($finder as $file) {
             if ($this->installGate instanceof LaravelBoostGuidelineGate
-                && ! $this->installGate->allows($this->segmentFromPath($file))) {
+                && ! $this->installGate->allows($this->segmentFromPath($file), $this->versionFromPath($file))) {
                 continue;
             }
 
@@ -100,6 +100,29 @@ final class LaravelBoostGuidelineReader
         }
 
         return $parts[0];
+    }
+
+    /**
+     * The version-major sub-segment of a `<pkg>/<version>/<file>` guideline
+     * path — `12` for `laravel/12/core.blade.php`, `8.3` for
+     * `php/8.3/core.blade.php` — or null for a top-level (`<pkg>/core`) or loose
+     * guideline. A version segment is a numeric major (`12`) or major.minor
+     * (`8.3`); the install gate uses it to keep only the host's installed major.
+     */
+    private function versionFromPath(SplFileInfo $file): ?string
+    {
+        $relative = ltrim(
+            substr($file->getPathname(), strlen($this->laravelBoostAiRoot)),
+            DIRECTORY_SEPARATOR,
+        );
+
+        $parts = explode(DIRECTORY_SEPARATOR, $relative);
+
+        if (count($parts) >= 3 && preg_match('/^\d+(\.\d+)?$/', $parts[1]) === 1) {
+            return $parts[1];
+        }
+
+        return null;
     }
 
     /**

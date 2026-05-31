@@ -45,12 +45,14 @@ function passthroughBladeRenderer(): SkillRenderer
     };
 }
 
-/** @param  list<array{0: Packages, 1: bool}>  $packages */
+/** @param  list<array{0: Packages, 1: bool, 2?: string}>  $packages */
 function readerRoster(array $packages): Roster
 {
     $roster = new Roster();
-    foreach ($packages as [$enum, $direct]) {
-        $roster->add((new Package($enum, $enum->value, '1.0.0'))->setDirect($direct));
+    foreach ($packages as $entry) {
+        [$enum, $direct] = $entry;
+        $version = $entry[2] ?? '1.0.0';
+        $roster->add((new Package($enum, $enum->value, $version))->setDirect($direct));
     }
 
     return $roster;
@@ -183,13 +185,14 @@ test('install gate applies PEST-over-PHPUNIT priority to per-package guidelines'
     expect($names)->toBe(['pest-core']);
 });
 
-test('install gate keeps per-major guideline files for an installed package', function (): void {
+test('install gate keeps the host-major per-major guideline files for an installed package', function (): void {
     $root = guidelineFixtureRoot();
     writeGuideline($root, 'livewire/core.blade.php');
     writeGuideline($root, 'livewire/3/testing.blade.php');
 
+    // Host on Livewire 3 → the livewire/3 fragment is the host major.
     $gate = LaravelBoostGuidelineGate::fromRoster(
-        readerRoster([[Packages::LIVEWIRE, true]]),
+        readerRoster([[Packages::LIVEWIRE, true, '3.0.0']]),
         $root,
     );
 
@@ -204,4 +207,35 @@ test('install gate keeps per-major guideline files for an installed package', fu
     sort($names);
 
     expect($names)->toBe(['livewire-3-testing', 'livewire-core']);
+});
+
+test('install gate scopes version fragments to the host major and drops non-package version dirs', function (): void {
+    // laravel/boost composes only the host-major package dir, and no version
+    // subdir for non-package dirs (php/core but never php/8.x).
+    $root = guidelineFixtureRoot();
+    writeGuideline($root, 'laravel/core.blade.php');
+    writeGuideline($root, 'laravel/11/core.blade.php');
+    writeGuideline($root, 'laravel/12/core.blade.php');
+    writeGuideline($root, 'php/core.blade.php');
+    writeGuideline($root, 'php/8.5/core.blade.php');
+
+    // Host on Laravel 12.
+    $gate = LaravelBoostGuidelineGate::fromRoster(
+        readerRoster([[Packages::LARAVEL, true, '12.0.0']]),
+        $root,
+    );
+
+    $reader = new LaravelBoostGuidelineReader(
+        $root,
+        new LaravelBoostTagManifest(),
+        passthroughBladeRenderer(),
+        $gate,
+    );
+
+    $names = array_map(fn (Guideline $g): string => $g->name, $reader->readGuidelines());
+    sort($names);
+
+    // laravel-12 kept (host major); laravel-11 dropped (wrong major);
+    // php-core kept (core segment); php-8.5 dropped (php is not a package).
+    expect($names)->toBe(['laravel-12-core', 'laravel-core', 'php-core']);
 });

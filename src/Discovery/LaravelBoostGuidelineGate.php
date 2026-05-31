@@ -42,9 +42,13 @@ use Laravel\Roster\Roster;
  * stays gated because it IS a composer package (`Packages::SAIL`) excluded from
  * discovery — matching laravel/boost's Sail-is-opt-in behaviour.
  *
- * Version-major sub-fragments (`laravel/11` vs `laravel/12`, `php/8.x`) are NOT
- * yet host-major-scoped — they key on the top-level segment only, so all majors
- * still emit. Tracked as a separate faithful-mirror follow-up.
+ * Version-major sub-fragments are host-major-scoped via the `$versionMajor`
+ * arg to `allows()`. laravel/boost's `GuidelineComposer` composes only the
+ * host's installed major for a PACKAGE guideline dir (`<dir>/{majorVersion}`)
+ * and composes NO version subdir for non-package dirs (it emits `php/core` but
+ * never `php/8.x`). So `laravel/12/core` emits on a Laravel 12 host while
+ * `laravel/11/core` is dropped, and every `php/8.x/core` is dropped (php is not
+ * a Composer package — only its top-level `php/core` emits).
  */
 final readonly class LaravelBoostGuidelineGate
 {
@@ -86,10 +90,17 @@ final readonly class LaravelBoostGuidelineGate
      *   — gated by laravel/boost on runtime detection, not composer presence)
      *   pass through, since the package gate has no signal to judge them and
      *   dropping them would lose guidance with no add-back lever.
+     * @param  array<string, string>  $hostMajors  installed-and-allowed package
+     *   dir name → the host's installed major version (`Package::majorVersion()`).
+     *   Drives version-major sub-fragment scoping: `<pkg>/<version>/…` emits
+     *   only when `<version>` equals the host's major for `<pkg>`. Dirs absent
+     *   here (non-packages like `php`, or uninstalled packages) have no
+     *   version subdir composed.
      */
     private function __construct(
         private ?array $allowedPackageDirs,
         private array $knownPackageDirs = [],
+        private array $hostMajors = [],
     ) {}
 
     /**
@@ -111,6 +122,7 @@ final readonly class LaravelBoostGuidelineGate
     public static function fromRoster(Roster $roster, string $aiRoot): self
     {
         $allowed = [];
+        $hostMajors = [];
 
         foreach ($roster->packages() as $package) {
             if (self::shouldExcludePackage($roster, $package)) {
@@ -120,10 +132,11 @@ final readonly class LaravelBoostGuidelineGate
             $dir = self::normalizePackageName($package->name());
             if (is_dir($aiRoot . '/' . $dir)) {
                 $allowed[$dir] = true;
+                $hostMajors[$dir] = $package->majorVersion();
             }
         }
 
-        return new self($allowed, self::knownPackageDirs());
+        return new self($allowed, self::knownPackageDirs(), $hostMajors);
     }
 
     /**
@@ -148,11 +161,26 @@ final readonly class LaravelBoostGuidelineGate
      * @param  string  $segment  top-level `.ai/` path segment for a guideline
      *   (dir name for `<pkg>/core.blade.php`, or basename without extension for
      *   a loose `<name>.blade.php`).
+     * @param  string|null  $versionMajor  the version sub-segment for a
+     *   `<pkg>/<version>/…` fragment (e.g. `12` for `laravel/12/core`, `8.3`
+     *   for `php/8.3/core`), or null for a top-level guideline.
      */
-    public function allows(string $segment): bool
+    public function allows(string $segment, ?string $versionMajor = null): bool
     {
         if ($this->allowedPackageDirs === null) {
             return true;
+        }
+
+        if ($versionMajor !== null) {
+            // Version-major sub-fragment. laravel/boost's GuidelineComposer
+            // composes only the host's installed major for a PACKAGE guideline
+            // dir (`getPackageGuidelines` reads `<dir>/{$package->majorVersion()}`
+            // only), and composes NO version subdir for non-package dirs (it
+            // emits `php/core` but never `php/8.x`). So a version fragment emits
+            // iff `<pkg>` is an installed+allowed package and `<version>` is its
+            // host major; everything else (wrong major, or a non-package dir
+            // like `php`) is suppressed.
+            return ($this->hostMajors[$segment] ?? null) === $versionMajor;
         }
 
         if (in_array($segment, self::CORE_SEGMENTS, true)) {

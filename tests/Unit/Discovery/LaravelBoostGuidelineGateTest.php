@@ -6,15 +6,18 @@ use Laravel\Roster\Roster;
 use SanderMuller\ProjectBoostLaravel\Discovery\LaravelBoostGuidelineGate;
 
 /**
- * Build a Roster with the given packages. Each entry is [Packages enum, direct].
+ * Build a Roster with the given packages. Each entry is
+ * [Packages enum, direct, optional version (default 1.0.0)].
  *
- * @param  list<array{0: Packages, 1: bool}>  $packages
+ * @param  list<array{0: Packages, 1: bool, 2?: string}>  $packages
  */
 function gateRoster(array $packages): Roster
 {
     $roster = new Roster();
-    foreach ($packages as [$enum, $direct]) {
-        $roster->add((new Package($enum, $enum->value, '1.0.0'))->setDirect($direct));
+    foreach ($packages as $entry) {
+        [$enum, $direct] = $entry;
+        $version = $entry[2] ?? '1.0.0';
+        $roster->add((new Package($enum, $enum->value, $version))->setDirect($direct));
     }
 
     return $roster;
@@ -182,4 +185,28 @@ test('a package whose dir is absent from .ai is not allowed', function (): void 
 
     expect($gate->allows('pennant'))->toBeFalse()
         ->and($gate->allows('phpunit'))->toBeTrue();
+});
+
+test('scopes package version-major fragments to the host installed major', function (): void {
+    // laravel/boost composes only `<dir>/{majorVersion}` for a package guideline
+    // dir, so laravel/12 emits on a Laravel 12 host while laravel/11 is dropped.
+    $root = gateAiRoot(['laravel']);
+    $gate = LaravelBoostGuidelineGate::fromRoster(
+        gateRoster([[Packages::LARAVEL, true, '12.0.0']]),
+        $root,
+    );
+
+    expect($gate->allows('laravel'))->toBeTrue()           // top-level core
+        ->and($gate->allows('laravel', '12'))->toBeTrue()  // host major
+        ->and($gate->allows('laravel', '11'))->toBeFalse(); // wrong major
+});
+
+test('drops version subdirs for non-composer-package dirs like php', function (): void {
+    // laravel/boost composes php/core but never php/8.x — php is not a package.
+    $root = gateAiRoot([]);
+    $gate = LaravelBoostGuidelineGate::fromRoster(gateRoster([]), $root);
+
+    expect($gate->allows('php'))->toBeTrue()            // php/core: core segment
+        ->and($gate->allows('php', '8.5'))->toBeFalse() // php/8.5: php not a package
+        ->and($gate->allows('php', '8.2'))->toBeFalse();
 });
