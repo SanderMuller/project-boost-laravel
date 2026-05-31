@@ -5,6 +5,35 @@ All notable changes to `sandermuller/project-boost-laravel` will be documented i
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.7.0 - 2026-05-31
+
+<!-- verified-sha: da9e945fa2ef5b0a6fd0afb95bfc5307dc964827 -->
+Crosses the package to **`boost-core ^0.14`** (floor bump — adopters must move their boost-core constraint to `^0.14`). No wrapper code change; the crossing adopts boost-core 0.14's project-scope reconcile-on-sync.
+
+### Breaking
+
+#### boost-core floor raised to `^0.14`
+
+`sandermuller/boost-core` is now required at `^0.14.0` (was `^0.13.0`). Consumers on boost-core 0.13 must bump to `^0.14`:
+
+```bash
+composer require sandermuller/boost-core:^0.14
+
+```
+(Consumers who track boost-core transitively through this package get it on a `composer update --with-all-dependencies` — no explicit require needed.)
+
+`BoostWrapperContract` is unchanged, so the wrapper needs no code change — verified against the 0.14 tree (full gauntlet green; the live sync confirmed the behaviors below in this package's own consumer tree).
+
+### What the crossing brings (boost-core 0.14)
+
+- **Agent-deselection guidance-orphan reap.** Dropping an agent from `boost.php`'s `withAgents()` now reaps its now-stale guidance file (`CLAUDE.md` / `AGENTS.md` / `GEMINI.md`) — but only when boost owns it (the on-disk `sha256` matches boost-core's sync manifest). A file you hand-edited since the last sync has a diverged sha and is **preserved** (never-lossy). This closes the stale-orphan case where a de-selected agent's guidance file lingered indefinitely (boost-core previously pruned the agent's skill dir but left its guidance file).
+- **gitignore dir/per-file dedup.** The boost-managed `.gitignore` block no longer lists per-skill `SKILL.md` entries already covered by the dir-level glob (`.agents/skills/`, `.claude/skills/`). The block collapses back to dir-level only — this release's `.gitignore` is that self-heal. (boost-core 0.13's wrapper-emit gitignore entries had double-listed dir + per-file; 0.14 coalesces by prefix.)
+- **Emitter-dormancy reap.** A file emitter that goes dormant has its previously-emitted output reaped (sha-gated, same never-lossy guard). Not exercised by this package directly, but part of the same reconcile-on-sync pass.
+
+The dev-only `sandermuller/package-boost-laravel` umbrella resolves to `0.9.1` (its boost-core constraint widened to `^0.13 || ^0.14`); no change to this package's own constraint on it.
+
+**Full Changelog**: https://github.com/SanderMuller/project-boost-laravel/compare/0.6.0...0.7.0
+
 ## 0.6.0 - 2026-05-31
 
 <!-- verified-sha: d2552273e92e5876279a6f1044cfc4c02e4c2a2f -->
@@ -18,6 +47,7 @@ Crosses the package to **`boost-core ^0.13`** (floor bump — adopters must move
 
 ```bash
 composer require sandermuller/boost-core:^0.13
+
 
 ```
 `BoostWrapperContract` is unchanged across 0.11–0.13 (same `injectedEmitPaths()` signature), so this wrapper needs no code change — verified against the 0.13 tree. The crossing brings two consumer-visible boost-core changes:
@@ -49,6 +79,7 @@ The dev-only `sandermuller/package-boost-php` constraint moved to `^0.15.0` (it 
 composer require sandermuller/boost-core:^0.13
 composer update sandermuller/project-boost-laravel sandermuller/boost-core
 php artisan project-boost:sync
+
 
 ```
 After the update:
@@ -272,6 +303,7 @@ declaration.
 
 
 
+
 ```
 Combined with the engine's 0.9.3 safety gate (which converts the thrown exception into a `SyncResult::error` rather than letting it propagate mid-write), the worst-case path is now: operator sees a clear message, no partial writes happen, recovery is straightforward.
 
@@ -323,6 +355,7 @@ Sync complete · wrote=1 · deleted=0 · unchanged=118
 
 
 
+
 ```
 Same output between "no divergence" and "divergence resolved by re-render" runs. Operator sees the re-render happened but gets no signal explaining the WHY — even when the engine emitted a parseable-divergence warning to the diagnostics channel.
 
@@ -338,6 +371,7 @@ Project Conventions
   ⚠ db-strategy: CLAUDE.md body diverged from boost.php's withConventions(); re-rendered from boost.php as canonical source.
 
 Sync complete · wrote=1 · deleted=0 · unchanged=118
+
 
 
 
@@ -553,6 +587,7 @@ PROJECT_BOOST_SUPPRESS_UPSTREAM=true
 
 
 
+
 ```
 A `CommandStarting` event listener intercepts the `boost:install` command and force-injects `--mcp` if it wasn't already passed. laravel/boost short-circuits its feature-selection step (the gate for its guideline + skill writers) when `--mcp` is set, so the user-visible outcome matches what `--mcp` would have produced.
 
@@ -595,6 +630,7 @@ If you want the defensive `suppress_upstream_writers` guardrail active, add `PRO
 
 ```bash
 php artisan project-boost:where
+
 
 
 
@@ -722,6 +758,7 @@ This package closes those gaps. laravel/boost still owns the MCP server (its cor
 
 ```bash
 composer require --dev sandermuller/project-boost-laravel
+
 
 
 
