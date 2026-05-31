@@ -209,9 +209,8 @@ test('install gate keeps the host-major per-major guideline files for an install
     expect($names)->toBe(['livewire-3-testing', 'livewire-core']);
 });
 
-test('install gate scopes version fragments to the host major and drops non-package version dirs', function (): void {
-    // laravel/boost composes only the host-major package dir, and no version
-    // subdir for non-package dirs (php/core but never php/8.x).
+test('install gate scopes laravel to host major and php to the declared floor', function (): void {
+    // Laravel = exact host major; php = cumulative <= floor.
     $root = guidelineFixtureRoot();
     writeGuideline($root, 'laravel/core.blade.php');
     writeGuideline($root, 'laravel/11/core.blade.php');
@@ -219,10 +218,11 @@ test('install gate scopes version fragments to the host major and drops non-pack
     writeGuideline($root, 'php/core.blade.php');
     writeGuideline($root, 'php/8.5/core.blade.php');
 
-    // Host on Laravel 12.
+    // Host on Laravel 12, PHP floor 8.3.
     $gate = LaravelBoostGuidelineGate::fromRoster(
         readerRoster([[Packages::LARAVEL, true, '12.0.0']]),
         $root,
+        '8.3',
     );
 
     $reader = new LaravelBoostGuidelineReader(
@@ -236,6 +236,49 @@ test('install gate scopes version fragments to the host major and drops non-pack
     sort($names);
 
     // laravel-12 kept (host major); laravel-11 dropped (wrong major);
-    // php-core kept (core segment); php-8.5 dropped (php is not a package).
+    // php-core kept (core); php-8.5 dropped (8.5 > floor 8.3).
     expect($names)->toBe(['laravel-12-core', 'laravel-core', 'php-core']);
+});
+
+test('install gate keeps php version fragments at or below the declared floor', function (): void {
+    $root = guidelineFixtureRoot();
+    writeGuideline($root, 'php/core.blade.php');
+    writeGuideline($root, 'php/8.4/core.blade.php');
+    writeGuideline($root, 'php/8.5/core.blade.php');
+    writeGuideline($root, 'php/8.6/core.blade.php');
+
+    // PHP floor 8.5 → keep 8.4 + 8.5 (cumulative), drop 8.6 (above range).
+    $gate = LaravelBoostGuidelineGate::fromRoster(readerRoster([]), $root, '8.5');
+
+    $reader = new LaravelBoostGuidelineReader(
+        $root,
+        new LaravelBoostTagManifest(),
+        passthroughBladeRenderer(),
+        $gate,
+    );
+
+    $names = array_map(fn (Guideline $g): string => $g->name, $reader->readGuidelines());
+    sort($names);
+
+    expect($names)->toBe(['php-8.4-core', 'php-8.5-core', 'php-core']);
+});
+
+test('reader skips guidelines that render empty (filled() mirror)', function (): void {
+    $root = guidelineFixtureRoot();
+    writeGuideline($root, 'php/core.blade.php', 'real content');
+    writeGuideline($root, 'php/8.5/core.blade.php', '   '); // whitespace-only → empty
+
+    // Floor 8.5 keeps php/8.5, but it renders empty → reader drops it anyway.
+    $gate = LaravelBoostGuidelineGate::fromRoster(readerRoster([]), $root, '8.5');
+
+    $reader = new LaravelBoostGuidelineReader(
+        $root,
+        new LaravelBoostTagManifest(),
+        passthroughBladeRenderer(),
+        $gate,
+    );
+
+    $names = array_map(fn (Guideline $g): string => $g->name, $reader->readGuidelines());
+
+    expect($names)->toBe(['php-core']);
 });

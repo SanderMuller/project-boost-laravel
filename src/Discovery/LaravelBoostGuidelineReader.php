@@ -157,6 +157,15 @@ final class LaravelBoostGuidelineReader
             return null;
         }
 
+        // Skip guidelines that render empty — laravel/boost's GuidelineComposer
+        // filters these via `filled($guideline['content'])`. Without this, the
+        // empty per-version php fragments laravel/boost ships (e.g. an empty
+        // `php/8.2/core.blade.php`) would emit as content-less `php-8-2-core`
+        // noise whenever the host's PHP floor keeps them.
+        if (trim($rendered) === '') {
+            return null;
+        }
+
         $name = $this->guidelineNameFromPath($file);
         $sidecarTags = $this->tagManifest->tagsFor($name);
 

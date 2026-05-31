@@ -42,13 +42,19 @@ use Laravel\Roster\Roster;
  * stays gated because it IS a composer package (`Packages::SAIL`) excluded from
  * discovery — matching laravel/boost's Sail-is-opt-in behaviour.
  *
- * Version-major sub-fragments are host-major-scoped via the `$versionMajor`
- * arg to `allows()`. laravel/boost's `GuidelineComposer` composes only the
- * host's installed major for a PACKAGE guideline dir (`<dir>/{majorVersion}`)
- * and composes NO version subdir for non-package dirs (it emits `php/core` but
- * never `php/8.x`). So `laravel/12/core` emits on a Laravel 12 host while
- * `laravel/11/core` is dropped, and every `php/8.x/core` is dropped (php is not
- * a Composer package — only its top-level `php/core` emits).
+ * Version-major sub-fragments are scoped via the `$versionMajor` arg to
+ * `allows()`, on two different axes:
+ *
+ *  - **Package dirs (exact major).** laravel/boost's `GuidelineComposer` reads
+ *    only `<dir>/{$package->majorVersion()}` — the host's installed major —
+ *    because `laravel/11` vs `laravel/12` are alternative complete sets. So
+ *    `laravel/12/core` emits on a Laravel 12 host; `laravel/11/core` drops.
+ *  - **`php` dirs (cumulative floor).** `php/8.4` lists features NEW in 8.4,
+ *    all usable on any later PHP, so they're cumulative-downward. Keep every
+ *    `php/<v>` with `v <= phpFloor` (the project's declared `require.php`
+ *    minimum — the range the code must support). laravel/boost composes no
+ *    php/8.x itself, but the content is real and version-relevant, so the
+ *    wrapper surfaces the supported subset. Unknown floor → keep all.
  */
 final readonly class LaravelBoostGuidelineGate
 {
@@ -94,13 +100,19 @@ final readonly class LaravelBoostGuidelineGate
      *   dir name → the host's installed major version (`Package::majorVersion()`).
      *   Drives version-major sub-fragment scoping: `<pkg>/<version>/…` emits
      *   only when `<version>` equals the host's major for `<pkg>`. Dirs absent
-     *   here (non-packages like `php`, or uninstalled packages) have no
-     *   version subdir composed.
+     *   here (uninstalled packages) have no version subdir composed.
+     * @param  string|null  $phpFloor  the project's declared PHP floor
+     *   (`major.minor`, e.g. `8.3` from a `require.php` of `^8.3`). The `php`
+     *   version dirs are cumulative-downward — `php/8.4` lists features new in
+     *   8.4, all usable on any later PHP — so `php/<v>` emits for every
+     *   `v <= phpFloor` (the range the code must support). Null → keep all php
+     *   version fragments (never-lossy fallback when the floor can't be read).
      */
     private function __construct(
         private ?array $allowedPackageDirs,
         private array $knownPackageDirs = [],
         private array $hostMajors = [],
+        private ?string $phpFloor = null,
     ) {}
 
     /**
@@ -119,7 +131,7 @@ final readonly class LaravelBoostGuidelineGate
      * dir, drop the excluded/priority-shadowed/indirect ones, keep those whose
      * dir actually exists under the laravel/boost `.ai/` root.
      */
-    public static function fromRoster(Roster $roster, string $aiRoot): self
+    public static function fromRoster(Roster $roster, string $aiRoot, ?string $phpFloor = null): self
     {
         $allowed = [];
         $hostMajors = [];
@@ -136,7 +148,29 @@ final readonly class LaravelBoostGuidelineGate
             }
         }
 
-        return new self($allowed, self::knownPackageDirs(), $hostMajors);
+        return new self($allowed, self::knownPackageDirs(), $hostMajors, $phpFloor);
+    }
+
+    /**
+     * Lowest `major.minor` in a composer `require.php` constraint — the PHP
+     * floor the project must support. `^8.3` → `8.3`, `>=8.2` → `8.2`,
+     * `^8.2 || ^8.4` → `8.2`. Null when the constraint carries no `major.minor`
+     * token (the gate then keeps all php-version fragments — never-lossy).
+     */
+    public static function parsePhpFloor(string $constraint): ?string
+    {
+        if (preg_match_all('/\d+\.\d+/', $constraint, $matches) === 0) {
+            return null;
+        }
+
+        $floor = $matches[0][0];
+        foreach ($matches[0] as $version) {
+            if (version_compare($version, $floor, '<')) {
+                $floor = $version;
+            }
+        }
+
+        return $floor;
     }
 
     /**
@@ -172,14 +206,23 @@ final readonly class LaravelBoostGuidelineGate
         }
 
         if ($versionMajor !== null) {
-            // Version-major sub-fragment. laravel/boost's GuidelineComposer
-            // composes only the host's installed major for a PACKAGE guideline
-            // dir (`getPackageGuidelines` reads `<dir>/{$package->majorVersion()}`
-            // only), and composes NO version subdir for non-package dirs (it
-            // emits `php/core` but never `php/8.x`). So a version fragment emits
-            // iff `<pkg>` is an installed+allowed package and `<version>` is its
-            // host major; everything else (wrong major, or a non-package dir
-            // like `php`) is suppressed.
+            // `php` version dirs are CUMULATIVE-downward — `php/8.4` lists
+            // features new in 8.4, all usable on any later PHP — so keep every
+            // `php/<v>` with `v <= phpFloor` (the range the code must support).
+            // Unknown floor → keep all (never-lossy). laravel/boost itself
+            // composes no php/8.x, but the per-version content exists and is
+            // genuinely useful for the host's supported range, so the wrapper
+            // surfaces the applicable subset rather than inheriting that gap.
+            if ($segment === 'php') {
+                return $this->phpFloor === null
+                    || version_compare($versionMajor, $this->phpFloor, '<=');
+            }
+
+            // PACKAGE version dirs are EXACT-major — `laravel/11` vs `laravel/12`
+            // are alternative complete sets, not cumulative. laravel/boost's
+            // `getPackageGuidelines` reads only `<dir>/{$package->majorVersion()}`.
+            // Emit iff `<pkg>` is installed+allowed and `<version>` is its host
+            // major; wrong major (or any other non-package version dir) drops.
             return ($this->hostMajors[$segment] ?? null) === $versionMajor;
         }
 

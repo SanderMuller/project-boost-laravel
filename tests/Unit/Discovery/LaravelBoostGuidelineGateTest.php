@@ -201,12 +201,40 @@ test('scopes package version-major fragments to the host installed major', funct
         ->and($gate->allows('laravel', '11'))->toBeFalse(); // wrong major
 });
 
-test('drops version subdirs for non-composer-package dirs like php', function (): void {
-    // laravel/boost composes php/core but never php/8.x — php is not a package.
+test('scopes php version dirs cumulative-downward to the declared floor', function (): void {
+    // php/8.x is cumulative (8.4 features usable on 8.5), so keep every
+    // php/<v> with v <= floor; drop versions above the supported range.
+    $root = gateAiRoot([]);
+    $gate = LaravelBoostGuidelineGate::fromRoster(gateRoster([]), $root, '8.5');
+
+    expect($gate->allows('php'))->toBeTrue()            // php/core: core segment
+        ->and($gate->allows('php', '8.4'))->toBeTrue()  // <= floor
+        ->and($gate->allows('php', '8.5'))->toBeTrue()  // == floor
+        ->and($gate->allows('php', '8.6'))->toBeFalse(); // > floor
+});
+
+test('a lower php floor drops higher version dirs', function (): void {
+    $root = gateAiRoot([]);
+    $gate = LaravelBoostGuidelineGate::fromRoster(gateRoster([]), $root, '8.3');
+
+    expect($gate->allows('php', '8.3'))->toBeTrue()
+        ->and($gate->allows('php', '8.4'))->toBeFalse()
+        ->and($gate->allows('php', '8.5'))->toBeFalse();
+});
+
+test('keeps all php version dirs when the floor is unknown (never-lossy)', function (): void {
     $root = gateAiRoot([]);
     $gate = LaravelBoostGuidelineGate::fromRoster(gateRoster([]), $root);
 
-    expect($gate->allows('php'))->toBeTrue()            // php/core: core segment
-        ->and($gate->allows('php', '8.5'))->toBeFalse() // php/8.5: php not a package
-        ->and($gate->allows('php', '8.2'))->toBeFalse();
+    expect($gate->allows('php', '8.4'))->toBeTrue()
+        ->and($gate->allows('php', '8.5'))->toBeTrue()
+        ->and($gate->allows('php', '8.6'))->toBeTrue();
+});
+
+test('parsePhpFloor extracts the lowest major.minor from a require.php constraint', function (): void {
+    expect(LaravelBoostGuidelineGate::parsePhpFloor('^8.3'))->toBe('8.3')
+        ->and(LaravelBoostGuidelineGate::parsePhpFloor('>=8.2'))->toBe('8.2')
+        ->and(LaravelBoostGuidelineGate::parsePhpFloor('^8.2 || ^8.4'))->toBe('8.2')
+        ->and(LaravelBoostGuidelineGate::parsePhpFloor('8.5.*'))->toBe('8.5')
+        ->and(LaravelBoostGuidelineGate::parsePhpFloor('^8'))->toBeNull();
 });
