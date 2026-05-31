@@ -38,5 +38,6 @@ return BoostConfig::configure()
         Tag::Github,
         Tag::Laravel,
         Tag::Php,
+        Tag::Pest,
         'release-automation',
     );
