@@ -215,6 +215,17 @@ final class SyncCommand extends Command
             projectRoot: $projectRoot,
             checkOnly: $checkOnly,
             injectedVendorSkills: ['laravel/boost' => $skills],
+            // Register BladeRenderer for the engine's own loaders so a host's
+            // `.ai/guidelines/*.blade.php` (and `.ai/skills/`) render instead of
+            // being silently skipped — boost-core ships only the `.md`
+            // PassthroughRenderer, so without this an operator's host Blade
+            // guideline vanishes from the output with no warning. `extraSkillRenderers`
+            // APPENDS to the host's `boost.php` `withSkillRenderers()`, and the
+            // dispatcher is first-registered-wins, so a host that registered its
+            // own `.blade.php` renderer keeps it (no collision). This runs on the
+            // artisan path where the container is bootstrapped, so the renderer's
+            // container guard is satisfied.
+            extraSkillRenderers: [new BladeRenderer()],
             injectedVendorGuidelines: ['laravel/boost' => $guidelines],
         );
     }
