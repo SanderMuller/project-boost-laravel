@@ -43,7 +43,7 @@ Under the hood, `project-boost:install` calls `boost:install --mcp` so laravel/b
 composer require --dev sandermuller/project-boost-laravel
 ```
 
-`laravel/boost` and `sandermuller/boost-core` come in transitively.
+`laravel/boost` and `sandermuller/boost-core` come in transitively — do **not** require `sandermuller/boost-core` separately, it resolves through this package.
 
 ## Where do the skills come from?
 
