@@ -147,7 +147,7 @@ The `@php artisan project-boost:sync` hook routes through this package's wrapper
 
 `boost-core` ships a `SanderMuller\BoostCore\Scripts\BoostAutoSync::run` composer-script helper that invokes `vendor/bin/boost sync` (bare CLI). In Laravel projects using this package, that helper is the wrong hook: bare CLI bypasses this wrapper's injection pipeline entirely, so the laravel/boost-bundled skill set never reaches your agent directories. Operators who wire `BoostAutoSync::run` into their composer scripts typically don't notice — the bare-CLI sync still reports success, just against a smaller skill set than the wrapper would have surfaced. Use `@php artisan project-boost:sync` instead.
 
-With `boost-core ^0.11`, a stray bare-CLI sync no longer *deletes* the wrapper's already-emitted skill files — the `BoostWrapper` contract (see [Architecture](#architecture)) declares them so the cleanup pass leaves them in place. But bare CLI still won't *(re)emit* the laravel/boost set, so `@php artisan project-boost:sync` remains the correct hook.
+A stray bare-CLI sync no longer *deletes* the wrapper's already-emitted skill files — the `BoostWrapper` contract (see [Architecture](#architecture)) declares them so the cleanup pass leaves them in place. But bare CLI still won't *(re)emit* the laravel/boost set, so `@php artisan project-boost:sync` remains the correct hook.
 
 (For non-Laravel projects consuming `boost-core` directly without a wrapper, `BoostAutoSync::run` IS the correct hook. The guidance above is Laravel-app-specific.)
 
@@ -167,7 +167,7 @@ Declared in `boost.php` via `withRemoteSkills([RemoteSkillSource::githubBundle(.
 
 Guidelines are install-gated. `LaravelBoostGuidelineReader` emits only the core guidelines plus guidelines for packages the host actually installed, mirroring `laravel/boost`'s own `GuidelineComposer` detection (PHPUnit-vs-Pest priority, Sail opt-in, direct-only MCP / Livewire). An app never receives guidelines for packages it doesn't use — a Livewire + Filament + PHPUnit app won't get Inertia, Pest, or Sail guidance. Version-major sub-fragments are version-scoped too, on two axes: package dirs by exact installed major (a Laravel 12 app gets `laravel/12`, not `laravel/11` — they're alternative complete sets), and `php/8.x` cumulative-downward to your declared `require.php` floor (`php/8.4` features are usable on 8.5, so a project supporting `^8.3` keeps `≤8.3` and won't be told to use 8.5-only syntax it can't rely on).
 
-A `BoostWrapper` class implements boost-core 0.11.0's `BoostWrapperContract`, declaring the per-agent skill-emit paths this package injects. A bare `vendor/bin/boost sync` (no wrapper injection) then preserves those files instead of flagging them stale-to-delete. Requires `boost-core ^0.11`.
+A `BoostWrapper` class implements boost-core's `BoostWrapperContract` (introduced in 0.11.0), declaring the per-agent skill-emit paths this package injects. A bare `vendor/bin/boost sync` (no wrapper injection) then preserves those files instead of flagging them stale-to-delete. Requires `boost-core ^0.13`.
 
 ## Troubleshooting
 
