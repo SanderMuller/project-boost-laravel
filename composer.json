@@ -40,7 +40,7 @@
         "phpstan/phpstan-strict-rules": "^2.0",
         "rector/rector": "^2.4",
         "rector/type-perfect": "^2.1",
-        "sandermuller/boost-skills": "^1.6",
+        "sandermuller/boost-skills": "^1.9",
         "sandermuller/package-boost-php": "^0.13.0",
         "spaze/phpstan-disallowed-calls": "^4.12",
         "symplify/phpstan-extensions": "^12.0",
