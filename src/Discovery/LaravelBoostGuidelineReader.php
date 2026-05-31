@@ -58,10 +58,16 @@ final class LaravelBoostGuidelineReader
         // Match `.ai/<pkg>/core.blade.php` and `.ai/<pkg>/<major>/*.blade.php`
         // — but EXCLUDE the `.ai/<pkg>/skill/...` subtree (those are skills,
         // not guidelines).
+        // sortByName() pins lexicographic order — Symfony Finder otherwise
+        // yields in OS filesystem-iteration order (APFS hash order vs ext4
+        // readdir order), so guidelines would concatenate into CLAUDE.md in a
+        // different order per OS and produce content-free reorder churn across
+        // macOS/Linux dev machines and CI.
         $finder = (new Finder())
             ->in($this->laravelBoostAiRoot)
             ->notPath('/\/skill\//')
             ->name('*.blade.php')
+            ->sortByName()
             ->files();
 
         foreach ($finder as $file) {

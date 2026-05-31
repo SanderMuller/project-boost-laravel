@@ -57,10 +57,14 @@ final class LaravelBoostAssetReader
 
         $skills = [];
 
+        // sortByName() pins lexicographic order — Symfony Finder otherwise
+        // yields in OS filesystem-iteration order (APFS vs ext4), so the
+        // injected skill set would reach SyncEngine in a different order per OS.
         $finder = (new Finder())
             ->in($this->laravelBoostAiRoot)
             ->path('/\/skill\//')
             ->name(['SKILL.md', 'SKILL.blade.php'])
+            ->sortByName()
             ->files();
 
         foreach ($finder as $file) {

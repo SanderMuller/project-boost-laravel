@@ -282,3 +282,26 @@ test('reader skips guidelines that render empty (filled() mirror)', function ():
 
     expect($names)->toBe(['php-core']);
 });
+
+test('emits guidelines in deterministic lexicographic order regardless of write order', function (): void {
+    // Cross-OS determinism: Symfony Finder yields in filesystem-iteration order
+    // (APFS hash order vs ext4 readdir order) unless sortByName() is set. Without
+    // it, the guideline set reaches SyncEngine in a different order per OS and
+    // CLAUDE.md regenerates with a content-free section reorder — observed as a
+    // 157-line churn diff + CI auto-fix loop on a downstream consumer. The reader
+    // must hand back a stable, OS-independent order. Files are written here in
+    // reverse-lexicographic order so a naive (unsorted) walk would surface it.
+    $root = guidelineFixtureRoot();
+    writeGuideline($root, 'phpunit/core.blade.php');
+    writeGuideline($root, 'pest/core.blade.php');
+    writeGuideline($root, 'inertia-laravel/core.blade.php');
+    writeGuideline($root, 'foundation.blade.php');
+
+    $reader = new LaravelBoostGuidelineReader($root, new LaravelBoostTagManifest(), passthroughBladeRenderer());
+
+    // No sort() on the result — assert the reader's NATIVE emission order is
+    // already lexicographic by source path.
+    $names = array_map(fn (Guideline $g): string => $g->name, $reader->readGuidelines());
+
+    expect($names)->toBe(['foundation', 'inertia-laravel-core', 'pest-core', 'phpunit-core']);
+});
