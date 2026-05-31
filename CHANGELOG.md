@@ -5,6 +5,60 @@ All notable changes to `sandermuller/project-boost-laravel` will be documented i
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.6.0 - 2026-05-31
+
+<!-- verified-sha: d2552273e92e5876279a6f1044cfc4c02e4c2a2f -->
+Crosses the package to **`boost-core ^0.13`** (floor bump — adopters must move their boost-core constraint to `^0.13`), and folds in the PHP-version guideline scoping fix from the 0.5.x line.
+
+### Breaking
+
+#### boost-core floor raised to `^0.13`
+
+`sandermuller/boost-core` is now required at `^0.13.0` (was `^0.11.0`). Consumers tracking boost-core 0.11 or 0.12 must bump to `^0.13` to adopt this release:
+
+```bash
+composer require sandermuller/boost-core:^0.13
+
+```
+`BoostWrapperContract` is unchanged across 0.11–0.13 (same `injectedEmitPaths()` signature), so this wrapper needs no code change — verified against the 0.13 tree. The crossing brings two consumer-visible boost-core changes:
+
+- **Markerless agent-guidance files (0.12).** `CLAUDE.md` / `AGENTS.md` / `GEMINI.md` are wholesale-owned by boost-core (no managed-region markers), with an empty-over-non-empty preserve guard — boost never blanks a non-empty guidance file. On the first sync, content found outside boost's generated output is preserved below it with a warning; move durable hand-content into `.ai/guidelines/`.
+- **Sync manifest (0.13).** boost-core writes `.boost/manifest.json` recording every emitted path with provenance — this package's injected skill files are tagged `wrapper:sandermuller/project-boost-laravel`, so a bare-CLI `boost sync` reliably preserves them. The boost-managed `.gitignore` block gains a `.boost/` entry.
+
+The dev-only `sandermuller/package-boost-php` constraint moved to `^0.15.0` (it requires boost-core `^0.13`).
+
+### Fixed
+
+#### PHP-version guidelines scoped to the declared floor
+
+(Folded from the 0.5.x line.) The guideline install-gate scoped version-major fragments to the host's major — correct for package dirs (`laravel/11` vs `laravel/12`), but it had dropped *every* `php/<version>` fragment, losing a project's own PHP-version guidance (a PHP 8.5 project lost `array_first`, the pipe operator `|>`, `clone`-with).
+
+`php/8.x` fragments are cumulative-downward — each lists features new in that version, usable on any later PHP — so the gate now keeps `php/<v>` for every `v` at or below the project's declared `require.php` floor (the range the code must support). A `^8.5` project keeps `php/8.4` + `php/8.5`; a `^8.3` project keeps `≤8.3` and isn't told to use syntax it can't rely on. The reader also skips empty-rendering guidelines, mirroring `laravel/boost`'s `GuidelineComposer` (`filled()`), so boost's empty per-version PHP fragments don't emit as noise.
+
+### Compatibility
+
+- PHP `^8.3`
+- Laravel `^12.0 || ^13.0`
+- `laravel/boost` `^2.4`
+- `sandermuller/boost-core` `^0.13.0` (raised from `^0.11.0`)
+- `orchestra/testbench` `^11.1` (dev)
+
+### Upgrade notes
+
+```bash
+composer require sandermuller/boost-core:^0.13
+composer update sandermuller/project-boost-laravel sandermuller/boost-core
+php artisan project-boost:sync
+
+```
+After the update:
+
+- Your agent-guidance files become markerless boost-owned output. If you kept hand-written notes in `CLAUDE.md`/`AGENTS.md`, move them to `.ai/guidelines/` — boost preserves out-of-band content below its output on the migration sync and warns, but `.ai/guidelines/` is the durable home. Track `CLAUDE.md` so any overwrite is visible in git.
+- A `.boost/manifest.json` appears (gitignored) and your injected skill files are recorded as wrapper-owned — a stray bare-CLI sync no longer risks deleting them.
+- PHP-version guidance is scoped to your declared `require.php` floor; drop any `withExcludedGuidelines` entries you were carrying for off-floor `php-8.x` fragments.
+
+**Full Changelog**: https://github.com/SanderMuller/project-boost-laravel/compare/0.5.0...0.6.0
+
 ## 0.5.0 - 2026-05-31
 
 <!-- verified-sha: 309e2c02a552c19f921f7d4b3c36aaeb693fec78 -->
@@ -217,6 +271,7 @@ declaration.
 
 
 
+
 ```
 Combined with the engine's 0.9.3 safety gate (which converts the thrown exception into a `SyncResult::error` rather than letting it propagate mid-write), the worst-case path is now: operator sees a clear message, no partial writes happen, recovery is straightforward.
 
@@ -267,6 +322,7 @@ Sync complete · wrote=1 · deleted=0 · unchanged=118
 
 
 
+
 ```
 Same output between "no divergence" and "divergence resolved by re-render" runs. Operator sees the re-render happened but gets no signal explaining the WHY — even when the engine emitted a parseable-divergence warning to the diagnostics channel.
 
@@ -282,6 +338,7 @@ Project Conventions
   ⚠ db-strategy: CLAUDE.md body diverged from boost.php's withConventions(); re-rendered from boost.php as canonical source.
 
 Sync complete · wrote=1 · deleted=0 · unchanged=118
+
 
 
 
@@ -495,6 +552,7 @@ PROJECT_BOOST_SUPPRESS_UPSTREAM=true
 
 
 
+
 ```
 A `CommandStarting` event listener intercepts the `boost:install` command and force-injects `--mcp` if it wasn't already passed. laravel/boost short-circuits its feature-selection step (the gate for its guideline + skill writers) when `--mcp` is set, so the user-visible outcome matches what `--mcp` would have produced.
 
@@ -537,6 +595,7 @@ If you want the defensive `suppress_upstream_writers` guardrail active, add `PRO
 
 ```bash
 php artisan project-boost:where
+
 
 
 
@@ -663,6 +722,7 @@ This package closes those gaps. laravel/boost still owns the MCP server (its cor
 
 ```bash
 composer require --dev sandermuller/project-boost-laravel
+
 
 
 
