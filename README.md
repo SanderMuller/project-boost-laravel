@@ -8,6 +8,8 @@
 
 > The Laravel-app member of the [sandermuller boost family](#which-package-fits-your-role). Sits next to [`laravel/boost`](https://github.com/laravel/boost) in the same project. Boost keeps doing what it already does: MCP server, Laravel docs API, bundled Laravel skills. This package picks up everything else — fanning the generated agent files out across nine AI coding agents instead of four, and adding the family's filtering controls (`withTags()`, `withAllowedVendors()`, `withRemoteSkills()`, `boost where`).
 
+![overview image](overview.png)
+
 You run both packages together. Neither replaces the other; the design assumes they're installed side by side.
 
 ## Which package fits your role?
