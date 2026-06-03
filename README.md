@@ -10,7 +10,7 @@
 
 ![overview image](overview.png)
 
-You run both packages together. Neither replaces the other; the design assumes they're installed side by side.
+You run Laravel Boost and this package together. Neither replaces the other; the design assumes they're installed side by side.
 
 ## Which package fits your role?
 
@@ -108,7 +108,7 @@ See the [`boost-core` README](https://github.com/sandermuller/boost-core) for th
 | `project-boost:install`           | Wraps `boost:install --mcp` (boost owns MCP) and runs `project-boost:sync`. Auto-detects non-TTY for CI / Docker. Recommended entry point.                                                                                         |
 | `project-boost:install --no-sync` | MCP only; skip the sync.                                                                                                                                                                                                           |
 | `project-boost:sync`              | Discover, render, tag-filter, fan out to nine agents. Run after `composer install` or after editing `boost.php`.                                                                                                                   |
-| `project-boost:sync --dry-run`    | Preview the full SyncEngine pipeline (laravel/boost + host + scanned vendors + remote skills) in check mode. Requires `boost.php`.                                                                                                 |
+| `project-boost:sync --dry-run`    | Preview the full sync pipeline (laravel/boost + host + scanned vendors + remote skills) in check mode. Requires `boost.php` or `.config/boost.php`.                                                                                 |
 | `project-boost:where`             | List the laravel/boost-bundled skills and guidelines this package injects, with per-skill ship / tag-filter / shadow status. The companion to `vendor/bin/boost where`, which covers the host, scanned-vendor, and remote origins. |
 
 ## Coexistence with `laravel/boost`
@@ -143,7 +143,7 @@ In Laravel projects using this package, wire `@php artisan project-boost:sync` i
 }
 ```
 
-The `@php artisan project-boost:sync` hook routes through this package's wrapper, which walks `vendor/laravel/boost/.ai/`, pre-renders Blade templates with proper container context, and injects laravel/boost-bundled skills (`pest-testing`, `livewire-development`, `filament-development`, `inertia-development`, `eloquent-models`, and the rest) into the SyncEngine call. Without this hook, those bundled skills don't reach your agent directories — host skills + scanned vendors + remote skills still sync, but the laravel/boost set silently doesn't.
+The `@php artisan project-boost:sync` hook routes through this package's wrapper, which walks `vendor/laravel/boost/.ai/`, pre-renders Blade templates with proper container context, and injects laravel/boost-bundled skills (`pest-testing`, `livewire-development`, `filament-development`, `inertia-development`, `eloquent-models`, and the rest) into the sync call. Without this hook, those bundled skills don't reach your agent directories — host skills + scanned vendors + remote skills still sync, but the laravel/boost set silently doesn't.
 
 ### Why not `BoostAutoSync::run`?
 
@@ -165,15 +165,15 @@ Declared in `boost.php` via `withRemoteSkills([RemoteSkillSource::githubBundle(.
 
 ## Architecture
 
-`LaravelBoostAssetReader` and `LaravelBoostGuidelineReader` walk `vendor/laravel/boost/.ai/`, render any `.blade.php` files through the package's `BladeRenderer` (which uses `laravel/boost`'s own `RendersBladeGuidelines` trait so `$assist` binds correctly), and hand the resulting `Skill[]` and `Guideline[]` to boost-core via `SyncEngine::sync(injectedVendorSkills, injectedVendorGuidelines)`. From there it's boost-core's normal pipeline — tag filter, collision resolution, per-agent fan-out. See [boost-core's README](https://github.com/sandermuller/boost-core) for the engine internals.
+`LaravelBoostAssetReader` and `LaravelBoostGuidelineReader` walk `vendor/laravel/boost/.ai/`, render any `.blade.php` files through the package's `BladeRenderer` (which uses `laravel/boost`'s own `RendersBladeGuidelines` trait so `$assist` binds correctly), and hand the resulting `Skill[]` and `Guideline[]` to boost-core via `BoostSync::sync(injectedVendorSkills, injectedVendorGuidelines)`. From there it's boost-core's normal pipeline — tag filter, collision resolution, per-agent fan-out. See [boost-core's README](https://github.com/sandermuller/boost-core) for the engine internals.
 
 Guidelines are install-gated. `LaravelBoostGuidelineReader` emits only the core guidelines plus guidelines for packages the host actually installed, mirroring `laravel/boost`'s own `GuidelineComposer` detection (PHPUnit-vs-Pest priority, Sail opt-in, direct-only MCP / Livewire). An app never receives guidelines for packages it doesn't use — a Livewire + Filament + PHPUnit app won't get Inertia, Pest, or Sail guidance. Version-major sub-fragments are version-scoped too, on two axes: package dirs by exact installed major (a Laravel 12 app gets `laravel/12`, not `laravel/11` — they're alternative complete sets), and `php/8.x` cumulative-downward to your declared `require.php` floor (`php/8.4` features are usable on 8.5, so a project supporting `^8.3` keeps `≤8.3` and won't be told to use 8.5-only syntax it can't rely on).
 
-A `BoostWrapper` class implements boost-core's `BoostWrapperContract` (introduced in 0.11.0), declaring the per-agent skill-emit paths this package injects. A bare `vendor/bin/boost sync` (no wrapper injection) then preserves those files instead of flagging them stale-to-delete. Requires `boost-core ^0.16`.
+A `BoostWrapper` class implements boost-core's `BoostWrapperContract` (introduced in 0.11.0), declaring the per-agent skill-emit paths this package injects. A bare `vendor/bin/boost sync` (no wrapper injection) then preserves those files instead of flagging them stale-to-delete. Requires `boost-core ^0.22`.
 
 ## Troubleshooting
 
-**`No boost.php found at <root>/boost.php`** — create one (see `boost.php` above) or run `vendor/bin/boost install`.
+**`No boost config found (expected boost.php or .config/boost.php)`** — create one (see `boost.php` above; `.config/boost.php` is the canonical location on boost-core ≥ 0.17) or run `vendor/bin/boost install`.
 
 **`Errors during sync: ... listed more than once`** — `boost.php` declared a `withRemoteSkills` source whose skill name overlaps another source, or the laravel/boost asset reader produced two versioned variants of the same skill that didn't dedupe. The second case is a bug; please report.
 
