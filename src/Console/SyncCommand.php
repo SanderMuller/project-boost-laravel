@@ -6,8 +6,8 @@ use Illuminate\Console\Command;
 use Laravel\Roster\Roster;
 use SanderMuller\BoostCore\Skills\Guideline;
 use SanderMuller\BoostCore\Skills\Skill;
+use SanderMuller\BoostCore\Sync\BoostSync;
 use SanderMuller\BoostCore\Sync\EmitterAction;
-use SanderMuller\BoostCore\Sync\SyncEngine;
 use SanderMuller\BoostCore\Sync\SyncResult;
 use SanderMuller\BoostCore\Sync\WriteAction;
 use SanderMuller\ProjectBoostLaravel\Discovery\LaravelBoostAssetReader;
@@ -211,7 +211,7 @@ final class SyncCommand extends Command
      */
     private function invokeSyncEngine(string $projectRoot, array $skills, array $guidelines, bool $checkOnly): SyncResult
     {
-        return SyncEngine::default()->sync(
+        return BoostSync::make()->sync(
             projectRoot: $projectRoot,
             checkOnly: $checkOnly,
             injectedVendorSkills: ['laravel/boost' => $skills],

@@ -5,7 +5,7 @@ namespace SanderMuller\ProjectBoostLaravel\Console;
 use Illuminate\Console\Command;
 use SanderMuller\BoostCore\Skills\Guideline;
 use SanderMuller\BoostCore\Skills\Skill;
-use SanderMuller\BoostCore\Sync\SyncEngine;
+use SanderMuller\BoostCore\Sync\BoostSync;
 use SanderMuller\BoostCore\Sync\SyncResult;
 use SanderMuller\BoostCore\Sync\WriteAction;
 use SanderMuller\ProjectBoostLaravel\Discovery\LaravelBoostAssetReader;
@@ -73,7 +73,7 @@ final class WhereCommand extends Command
             return self::SUCCESS;
         }
 
-        $result = SyncEngine::default()->sync(
+        $result = BoostSync::make()->sync(
             projectRoot: $projectRoot,
             checkOnly: true,
             injectedVendorSkills: ['laravel/boost' => $skills],

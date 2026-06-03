@@ -3,17 +3,8 @@
 namespace SanderMuller\ProjectBoostLaravel;
 
 use SanderMuller\BoostCore\Agents\AgentTarget;
-use SanderMuller\BoostCore\Agents\AmpTarget;
-use SanderMuller\BoostCore\Agents\ClaudeCodeTarget;
-use SanderMuller\BoostCore\Agents\CodexTarget;
-use SanderMuller\BoostCore\Agents\CopilotTarget;
-use SanderMuller\BoostCore\Agents\CursorTarget;
-use SanderMuller\BoostCore\Agents\GeminiTarget;
-use SanderMuller\BoostCore\Agents\JunieTarget;
-use SanderMuller\BoostCore\Agents\KiroTarget;
-use SanderMuller\BoostCore\Agents\OpenCodeTarget;
 use SanderMuller\BoostCore\Contracts\BoostWrapperContract;
-use SanderMuller\BoostCore\Skills\Skill;
+use SanderMuller\BoostCore\Enums\Agent;
 use SplFileInfo;
 use Symfony\Component\Finder\Finder;
 
@@ -22,7 +13,7 @@ use Symfony\Component\Finder\Finder;
  * cleanup-pass doesn't flag wrapper-injected skill files as stale-to-delete.
  *
  * `project-boost:sync` injects laravel/boost-bundled skills into
- * `SyncEngine::sync(injectedVendorSkills: ['laravel/boost' => ...])`. The
+ * `BoostSync::sync(injectedVendorSkills: ['laravel/boost' => ...])`. The
  * resulting `<skill-dir>/<name>/SKILL.md` files live on disk after the sync.
  * A bare `vendor/bin/boost sync` (no wrapper injection args) produces an empty
  * injection set, so its cleanup pass would otherwise classify every one of
@@ -69,16 +60,7 @@ final class BoostWrapper implements BoostWrapperContract
 
         foreach (self::activeTargets($activeAgents) as $target) {
             foreach ($skillNames as $name) {
-                $skill = new Skill(
-                    name: $name,
-                    description: null,
-                    frontmatter: [],
-                    body: '',
-                    sourcePath: '',
-                    sourceVendor: 'laravel/boost',
-                );
-
-                $paths[$target->skillsDirectoryRelative() . '/' . $target->skillRelativePath($skill)] = true;
+                $paths[$target->skillsDirectoryRelative() . '/' . $target->skillRelativePathForName($name)] = true;
             }
         }
 
@@ -121,30 +103,23 @@ final class BoostWrapper implements BoostWrapperContract
     }
 
     /**
-     * The `AgentTarget` for each active agent, resolved by matching each
-     * target's `agent()` enum value against `$activeAgents`. Uses boost-core's
-     * own target set (public API) so the skill-dir layout stays in lockstep.
+     * The `AgentTarget` for each active agent, resolved through boost-core's
+     * `@api` `Agent` enum (`Agent::target()`) so the skill-dir layout stays in
+     * lockstep without naming the concrete `@internal` target classes.
+     *
+     * `tryFrom` (not `from`) keeps the original silent-skip semantics: an agent
+     * identifier boost-core's core enum doesn't know (e.g. a host-registered
+     * custom agent) is dropped rather than throwing inside boost-core's
+     * stale-cleanup pass.
      *
      * @param  list<string>  $activeAgents
      * @return list<AgentTarget>
      */
     private static function activeTargets(array $activeAgents): array
     {
-        $targets = [
-            new ClaudeCodeTarget(),
-            new CursorTarget(),
-            new CopilotTarget(),
-            new CodexTarget(),
-            new GeminiTarget(),
-            new JunieTarget(),
-            new KiroTarget(),
-            new OpenCodeTarget(),
-            new AmpTarget(),
-        ];
-
-        return array_values(array_filter(
-            $targets,
-            static fn (AgentTarget $target): bool => in_array($target->agent()->value, $activeAgents, true),
-        ));
+        return array_values(array_filter(array_map(
+            static fn (string $agent): ?AgentTarget => Agent::tryFrom($agent)?->target(),
+            $activeAgents,
+        )));
     }
 }

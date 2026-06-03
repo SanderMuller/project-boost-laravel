@@ -7,7 +7,7 @@ use Laravel\Boost\Contracts\SupportsMcp;
 use Laravel\Boost\Install\Agents\Agent as LaravelBoostAgent;
 use Laravel\Boost\Install\AgentsDetector;
 use Laravel\Boost\Install\McpWriter;
-use SanderMuller\BoostCore\Config\BoostConfigLoader;
+use SanderMuller\BoostCore\Config\BoostConfig;
 use SanderMuller\BoostCore\Enums\Agent as BoostCoreAgent;
 use Throwable;
 
@@ -109,7 +109,7 @@ final class InstallCommand extends Command
         $this->info("Non-interactive: writing MCP config for agents declared in boost.php (skipping laravel/boost's install command).");
 
         try {
-            $config = (new BoostConfigLoader())->load($projectRoot);
+            $config = BoostConfig::load($projectRoot);
         } catch (Throwable $throwable) {
             $this->error('Failed to load boost.php: ' . $throwable->getMessage());
 
