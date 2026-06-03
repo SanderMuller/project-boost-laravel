@@ -3,6 +3,8 @@
 namespace SanderMuller\ProjectBoostLaravel\Console;
 
 use Illuminate\Console\Command;
+use SanderMuller\BoostCore\Config\BoostConfig;
+use SanderMuller\BoostCore\Config\BoostConfigNotFoundException;
 use SanderMuller\BoostCore\Skills\Guideline;
 use SanderMuller\BoostCore\Skills\Skill;
 use SanderMuller\BoostCore\Sync\BoostSync;
@@ -41,8 +43,11 @@ final class WhereCommand extends Command
     public function handle(): int
     {
         $projectRoot = base_path();
-        if (! is_file($projectRoot . '/boost.php')) {
-            $this->error("No boost.php found at {$projectRoot}/boost.php.");
+
+        try {
+            BoostConfig::load($projectRoot);
+        } catch (BoostConfigNotFoundException) {
+            $this->error('No boost config found (expected boost.php or .config/boost.php).');
             $this->line('Create one with at least:');
             $this->line('  return BoostConfig::configure()->withAgents([Agent::CLAUDE_CODE]);');
 

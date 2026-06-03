@@ -4,6 +4,8 @@ namespace SanderMuller\ProjectBoostLaravel\Console;
 
 use Illuminate\Console\Command;
 use Laravel\Roster\Roster;
+use SanderMuller\BoostCore\Config\BoostConfig;
+use SanderMuller\BoostCore\Config\BoostConfigNotFoundException;
 use SanderMuller\BoostCore\Skills\Guideline;
 use SanderMuller\BoostCore\Skills\Skill;
 use SanderMuller\BoostCore\Sync\BoostSync;
@@ -143,17 +145,35 @@ final class SyncCommand extends Command
     }
 
     /**
+     * Pre-flight existence check that honours BOTH the legacy root `boost.php`
+     * and the canonical `.config/boost.php` layout (boost-core >= 0.17), via the
+     * `@api` `BoostConfig::load()` resolver — so a missing config yields a
+     * friendly hint instead of an uncaught exception from `BoostSync::sync()`.
+     * Returns false (and prints the hint) when no config resolves.
+     */
+    private function ensureBoostConfig(string $projectRoot): bool
+    {
+        try {
+            BoostConfig::load($projectRoot);
+        } catch (BoostConfigNotFoundException) {
+            $this->error('No boost config found (expected boost.php or .config/boost.php).');
+            $this->line('Create one with at least:');
+            $this->line('  return BoostConfig::configure()->withAgents([Agent::CLAUDE_CODE]);');
+
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
      * @param  list<Skill>  $skills
      * @param  list<Guideline>  $guidelines
      */
     private function runSync(array $skills, array $guidelines): int
     {
         $projectRoot = base_path();
-        if (! is_file($projectRoot . '/boost.php')) {
-            $this->error("No boost.php found at {$projectRoot}/boost.php.");
-            $this->line('Create one with at least:');
-            $this->line('  return BoostConfig::configure()->withAgents([Agent::CLAUDE_CODE]);');
-
+        if (! $this->ensureBoostConfig($projectRoot)) {
             return self::FAILURE;
         }
 
@@ -181,11 +201,7 @@ final class SyncCommand extends Command
     private function reportDryRun(array $skills, array $guidelines): int
     {
         $projectRoot = base_path();
-        if (! is_file($projectRoot . '/boost.php')) {
-            $this->error("No boost.php found at {$projectRoot}/boost.php.");
-            $this->line('Create one with at least:');
-            $this->line('  return BoostConfig::configure()->withAgents([Agent::CLAUDE_CODE]);');
-
+        if (! $this->ensureBoostConfig($projectRoot)) {
             return self::FAILURE;
         }
 

@@ -8,6 +8,7 @@ use Laravel\Boost\Install\Agents\Agent as LaravelBoostAgent;
 use Laravel\Boost\Install\AgentsDetector;
 use Laravel\Boost\Install\McpWriter;
 use SanderMuller\BoostCore\Config\BoostConfig;
+use SanderMuller\BoostCore\Config\BoostConfigNotFoundException;
 use SanderMuller\BoostCore\Enums\Agent as BoostCoreAgent;
 use Throwable;
 
@@ -98,26 +99,24 @@ final class InstallCommand extends Command
     {
         $projectRoot = base_path();
 
-        if (! is_file($projectRoot . '/boost.php')) {
-            $this->error("No boost.php found at {$projectRoot}/boost.php.");
-            $this->line('Non-interactive install reads agents from boost.php. Create one with at least:');
+        try {
+            $config = BoostConfig::load($projectRoot);
+        } catch (BoostConfigNotFoundException) {
+            $this->error('No boost config found (expected boost.php or .config/boost.php).');
+            $this->line('Non-interactive install reads agents from your boost config. Create one with at least:');
             $this->line('  return BoostConfig::configure()->withAgents([Agent::CLAUDE_CODE]);');
 
             return self::FAILURE;
-        }
-
-        $this->info("Non-interactive: writing MCP config for agents declared in boost.php (skipping laravel/boost's install command).");
-
-        try {
-            $config = BoostConfig::load($projectRoot);
         } catch (Throwable $throwable) {
-            $this->error('Failed to load boost.php: ' . $throwable->getMessage());
+            $this->error('Failed to load boost config: ' . $throwable->getMessage());
 
             return self::FAILURE;
         }
 
+        $this->info("Non-interactive: writing MCP config for agents declared in your boost config (skipping laravel/boost's install command).");
+
         if ($config->agents === []) {
-            $this->warn('boost.php declares no agents — nothing to install. Add `withAgents([Agent::CLAUDE_CODE, ...])`.');
+            $this->warn('Your boost config declares no agents — nothing to install. Add `withAgents([Agent::CLAUDE_CODE, ...])`.');
 
             return self::SUCCESS;
         }

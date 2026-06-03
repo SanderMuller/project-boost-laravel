@@ -35,6 +35,7 @@ function cleanSyncFixtures(): void
 {
     foreach ([
         base_path('boost.php'),
+        base_path('.config/boost.php'),
         base_path('CLAUDE.md'),
         base_path('AGENTS.md'),
         base_path('.mcp.json'),
@@ -79,4 +80,31 @@ it('renders a host .ai/guidelines/*.blade.php instead of silently skipping it', 
     // skips the unrenderable `.blade.php` and the marker never appears.
     expect(file_get_contents(base_path('CLAUDE.md')))
         ->toContain('HOST_BLADE_GUIDELINE_MARKER');
+});
+
+it('resolves config from .config/boost.php (canonical layout), not just root boost.php', function (): void {
+    // Regression: the command guard hard-coded base_path('boost.php'), so after
+    // the .config/ migration (boost-core >= 0.17 canonical) project-boost:sync
+    // falsely aborted with "No boost config found" despite a valid config. A
+    // config at .config/boost.php must drive the sync just like a root boost.php.
+    File::ensureDirectoryExists(base_path('.config'));
+    file_put_contents(base_path('.config/boost.php'), <<<'PHP'
+        <?php declare(strict_types=1);
+
+        use SanderMuller\BoostCore\Config\BoostConfig;
+        use SanderMuller\BoostCore\Enums\Agent;
+
+        return BoostConfig::configure()->withAgents([Agent::CLAUDE_CODE]);
+        PHP);
+
+    File::ensureDirectoryExists(base_path('.ai/guidelines'));
+    file_put_contents(
+        base_path('.ai/guidelines/host-style.blade.php'),
+        "## Host Style\n\nCONFIG_LAYOUT_MARKER\n",
+    );
+
+    $this->artisan('project-boost:sync')->assertSuccessful();
+
+    expect(file_get_contents(base_path('CLAUDE.md')))
+        ->toContain('CONFIG_LAYOUT_MARKER');
 });

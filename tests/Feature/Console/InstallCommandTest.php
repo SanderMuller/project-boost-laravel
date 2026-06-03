@@ -46,6 +46,7 @@ function cleanWorkbenchFixtures(): void
 {
     foreach ([
         base_path('boost.php'),
+        base_path('.config/boost.php'),
         base_path('.mcp.json'),
     ] as $file) {
         if (file_exists($file)) {
@@ -76,12 +77,42 @@ function writeBoostPhp(string $body): void
         PHP);
 }
 
+function writeBoostPhpAtConfig(string $body): void
+{
+    File::ensureDirectoryExists(base_path('.config'));
+    file_put_contents(base_path('.config/boost.php'), <<<PHP
+        <?php declare(strict_types=1);
+
+        use SanderMuller\\BoostCore\\Config\\BoostConfig;
+        use SanderMuller\\BoostCore\\Enums\\Agent;
+
+        return {$body};
+        PHP);
+}
+
 describe('project-boost:install · non-interactive', function (): void {
-    it('fails with a hint when boost.php is missing', function (): void {
+    it('fails with a hint when no boost config is present', function (): void {
         $this->artisan('project-boost:install', ['--no-interaction' => true])
-            ->expectsOutputToContain('No boost.php found')
+            ->expectsOutputToContain('No boost config found')
             ->expectsOutputToContain('Create one with at least')
             ->assertExitCode(1);
+    });
+
+    it('resolves config from .config/boost.php (canonical layout)', function (): void {
+        // Regression: the guard hard-coded base_path('boost.php'); after the
+        // .config/ migration (boost-core >= 0.17) the non-interactive install
+        // falsely aborted. Config at .config/boost.php must drive the install
+        // just like a root boost.php does.
+        writeBoostPhpAtConfig('BoostConfig::configure()->withAgents([Agent::CLAUDE_CODE])');
+
+        $this->artisan('project-boost:install', [
+            '--no-interaction' => true,
+            '--no-sync' => true,
+        ])
+            ->expectsOutputToContain('wrote MCP config for claude-code')
+            ->assertExitCode(0);
+
+        expect(file_exists(base_path('.mcp.json')))->toBeTrue();
     });
 
     it('warns and exits success when boost.php declares no agents', function (): void {
