@@ -124,6 +124,20 @@ test('returns an empty list when no agents are active', function (): void {
         ->toBeEmpty();
 });
 
+test('silently skips an agent identifier boost-core does not know', function (): void {
+    // `activeTargets()` resolves via `Agent::tryFrom($a)?->target()`, so an
+    // agent value boost-core's enum doesn't carry (a not-yet-supported or
+    // host-registered custom agent) is dropped, not thrown — boost-core's
+    // stale-cleanup pass must never crash on it. A regression to
+    // `Agent::from()` would raise a ValueError here and fail this test.
+    $root = wrapperProjectRoot(['pest/pest-testing' => 'blade.php']);
+
+    $paths = BoostWrapper::injectedEmitPaths($root, ['claude-code', 'totally-unknown-agent']);
+
+    // Only the known agent contributes a path; the unknown one is skipped.
+    expect($paths)->toBe(['.claude/skills/pest-testing/SKILL.md']);
+});
+
 test('never returns guideline files (CLAUDE.md / AGENTS.md / GEMINI.md)', function (): void {
     $root = wrapperProjectRoot([
         'pest/pest-testing' => 'blade.php',
