@@ -6,13 +6,32 @@
 
 - **Requires `sandermuller/boost-core ^0.23`** (was `^0.22`), with
   `sandermuller/package-boost-laravel ^0.15` and `sandermuller/boost-skills
-  ^2.1`. Most apps only bump this package; boost-core resolves transitively:
+  ^2.1`. This is a **dev** package, so keep `--dev` — a bare `composer require`
+  silently MOVES it into production `require`:
 
   ```bash
-  composer require "sandermuller/project-boost-laravel:^0.10"
+  composer require --dev "sandermuller/project-boost-laravel:^0.10"
   ```
 
-  If you pin any boost package directly, move them to the `0.23` line together.
+  **If you require `sandermuller/boost-skills` directly** (most app consumers
+  do), bump it in the SAME command. A directly-required `boost-skills ^2.0.6`
+  transitively pins `boost-core ^0.22`, which collides with `0.10`'s `^0.23`
+  floor — and `-W` alone can't resolve it, because `boost-skills` is a sibling
+  top-level require, not a dependency of this package. Bump both:
+
+  ```bash
+  composer require --dev \
+      "sandermuller/project-boost-laravel:^0.10" \
+      "sandermuller/boost-skills:^2.1" -W
+  ```
+
+  Pin each boost package to the floor you actually validated against, not the
+  wrapper's transitive floor. If you auto-run `project-boost:sync` from a
+  composer post-install/post-update script, a later lock regeneration or a
+  `--prefer-lowest` resolve can otherwise pull an OLDER `boost-skills` than the
+  one you tested — and since `boost-skills` decides which skills/guidelines
+  ship, that silently shifts generated guidance + the managed `.gitignore`
+  across developers and CI.
 
 ### Fixed (behaviour change, no migration for valid configs)
 
