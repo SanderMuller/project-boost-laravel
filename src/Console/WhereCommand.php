@@ -3,12 +3,14 @@
 namespace SanderMuller\ProjectBoostLaravel\Console;
 
 use Illuminate\Console\Command;
+use Laravel\Roster\Roster;
 use SanderMuller\BoostCore\Config\BoostConfig;
 use SanderMuller\BoostCore\Skills\Guideline;
 use SanderMuller\BoostCore\Skills\Skill;
 use SanderMuller\BoostCore\Sync\BoostSync;
 use SanderMuller\BoostCore\Sync\SyncResult;
 use SanderMuller\BoostCore\Sync\WriteAction;
+use SanderMuller\ProjectBoostLaravel\Console\Concerns\GatesGuidelines;
 use SanderMuller\ProjectBoostLaravel\Console\Concerns\LoadsBoostConfig;
 use SanderMuller\ProjectBoostLaravel\Discovery\LaravelBoostAssetReader;
 use SanderMuller\ProjectBoostLaravel\Discovery\LaravelBoostGuidelineReader;
@@ -37,6 +39,7 @@ use SanderMuller\ProjectBoostLaravel\Rendering\BladeRenderer;
  */
 final class WhereCommand extends Command
 {
+    use GatesGuidelines;
     use LoadsBoostConfig;
 
     /** @var string */
@@ -56,19 +59,26 @@ final class WhereCommand extends Command
         $blade = new BladeRenderer();
         $manifestPath = dirname(__DIR__, 2) . '/resources/boost/laravel-boost-tags.yaml';
         $manifest = LaravelBoostTagManifest::fromFile($manifestPath);
+        $aiRoot = base_path('vendor/laravel/boost/.ai');
+
+        // Scan the host roster once and share it with both the skill version
+        // resolver and the guideline install-gate — so `where` reports the same
+        // gated guideline set `sync` actually emits, not the full unfiltered set.
+        $roster = class_exists(Roster::class) ? Roster::scan($projectRoot) : null;
 
         $skillReader = new LaravelBoostAssetReader(
-            laravelBoostAiRoot: base_path('vendor/laravel/boost/.ai'),
+            laravelBoostAiRoot: $aiRoot,
             tagManifest: $manifest,
             bladeRenderer: $blade,
         );
         $guidelineReader = new LaravelBoostGuidelineReader(
-            laravelBoostAiRoot: base_path('vendor/laravel/boost/.ai'),
+            laravelBoostAiRoot: $aiRoot,
             tagManifest: $manifest,
             bladeRenderer: $blade,
+            installGate: $this->guidelineGate($roster, $aiRoot, $projectRoot),
         );
 
-        $skills = VersionResolver::withHostRoster($projectRoot)->resolve($skillReader->readSkills());
+        $skills = (new VersionResolver($roster))->resolve($skillReader->readSkills());
         $guidelines = $this->dedupedGuidelines($guidelineReader->readGuidelines());
 
         if ($skills === [] && $guidelines === []) {

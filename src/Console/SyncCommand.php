@@ -11,9 +11,9 @@ use SanderMuller\BoostCore\Sync\BoostSync;
 use SanderMuller\BoostCore\Sync\EmitterAction;
 use SanderMuller\BoostCore\Sync\SyncResult;
 use SanderMuller\BoostCore\Sync\WriteAction;
+use SanderMuller\ProjectBoostLaravel\Console\Concerns\GatesGuidelines;
 use SanderMuller\ProjectBoostLaravel\Console\Concerns\LoadsBoostConfig;
 use SanderMuller\ProjectBoostLaravel\Discovery\LaravelBoostAssetReader;
-use SanderMuller\ProjectBoostLaravel\Discovery\LaravelBoostGuidelineGate;
 use SanderMuller\ProjectBoostLaravel\Discovery\LaravelBoostGuidelineReader;
 use SanderMuller\ProjectBoostLaravel\Discovery\LaravelBoostTagManifest;
 use SanderMuller\ProjectBoostLaravel\Discovery\VersionResolver;
@@ -43,6 +43,7 @@ use SanderMuller\ProjectBoostLaravel\Rendering\BladeRenderer;
  */
 final class SyncCommand extends Command
 {
+    use GatesGuidelines;
     use LoadsBoostConfig;
 
     /** @var string */
@@ -65,11 +66,6 @@ final class SyncCommand extends Command
         // (suppresses guidelines for packages the host hasn't installed).
         $roster = class_exists(Roster::class) ? Roster::scan(base_path()) : null;
 
-        // The host's declared PHP floor (require.php minimum) scopes the
-        // cumulative php/<version> guideline fragments — keep those <= the
-        // range the project must support.
-        $phpFloor = $this->detectPhpFloor(base_path('composer.json'));
-
         $skillReader = new LaravelBoostAssetReader(
             laravelBoostAiRoot: $aiRoot,
             tagManifest: $manifest,
@@ -79,9 +75,7 @@ final class SyncCommand extends Command
             laravelBoostAiRoot: $aiRoot,
             tagManifest: $manifest,
             bladeRenderer: $blade,
-            installGate: $roster instanceof Roster
-                ? LaravelBoostGuidelineGate::fromRoster($roster, $aiRoot, $phpFloor)
-                : LaravelBoostGuidelineGate::permissive(),
+            installGate: $this->guidelineGate($roster, $aiRoot, base_path()),
         );
 
         $allSkills = $skillReader->readSkills();
@@ -120,34 +114,6 @@ final class SyncCommand extends Command
         }
 
         return $this->runSync($skills, $guidelines);
-    }
-
-    /**
-     * The project's declared PHP floor — the lowest `major.minor` in
-     * composer.json `require.php` (e.g. `8.3` from `^8.3`). Null when
-     * composer.json is unreadable or declares no `php` constraint, in which
-     * case the install gate keeps every php-version guideline fragment.
-     */
-    private function detectPhpFloor(string $composerJsonPath): ?string
-    {
-        if (! is_file($composerJsonPath)) {
-            return null;
-        }
-
-        $raw = file_get_contents($composerJsonPath);
-        if ($raw === false) {
-            return null;
-        }
-
-        $decoded = json_decode($raw, true);
-        if (! is_array($decoded)) {
-            return null;
-        }
-
-        $require = $decoded['require'] ?? null;
-        $php = is_array($require) ? ($require['php'] ?? null) : null;
-
-        return is_string($php) ? LaravelBoostGuidelineGate::parsePhpFloor($php) : null;
     }
 
     /**
