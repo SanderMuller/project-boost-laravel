@@ -29,6 +29,23 @@
 
   Running this package against `boost-core < 0.22` no longer resolves.
 
+- **Hand-edit `withTags(...)` to array form BEFORE you bump.** boost-core `0.20`
+  changed `withTags(Tag::Php, Tag::Jira)` to `withTags([Tag::Php, Tag::Jira])`.
+  The `project-boost:sync` hook `require`s your boost config during
+  `composer update`, so an un-migrated variadic call throws a `TypeError` at
+  that point — before boost-core's own AST auto-migration can run. Fix the call
+  first:
+
+  ```php
+  // before (pre-0.20)
+  ->withTags(Tag::Laravel, Tag::Php)
+  // after
+  ->withTags([Tag::Laravel, Tag::Php])
+  ```
+
+  If you forget, `project-boost:sync` now prints this exact migration hint
+  instead of aborting `composer update` with a raw stack trace.
+
 ### Fixed (no migration needed)
 
 - `project-boost:sync`, `project-boost:where`, and the non-interactive

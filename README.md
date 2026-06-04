@@ -76,6 +76,12 @@ In CI / Docker / any non-TTY shell, the wrapper detects the absence of an intera
 
 ## `boost.php`
 
+> **Config location.** boost-core resolves its config from `.config/boost.php`
+> (canonical on boost-core ≥ 0.17) or a legacy root `boost.php` — this package's
+> commands honor both. laravel/boost's own `boost.json` is a separate file that
+> laravel/boost owns and resolves from the project root; it intentionally stays
+> there and is not moved under `.config/`.
+
 Minimal:
 
 ```php
@@ -85,7 +91,7 @@ use SanderMuller\BoostCore\Enums\Tag;
 
 return BoostConfig::configure()
     ->withAgents([Agent::CLAUDE_CODE, Agent::CURSOR, Agent::CODEX])
-    ->withTags(Tag::Laravel, Tag::Php);
+    ->withTags([Tag::Laravel, Tag::Php]);
 ```
 
 Skills are tag-gated. A skill ships if every tag in its `metadata.boost-tags` is also in your `withTags()`. Untagged skills always ship. `vendor/bin/boost tags` lists every tag your installed packages declare. For a worked example of how someone organizes a tag vocabulary across a catalog, see [`sandermuller/boost-skills`'s tag registry](https://github.com/sandermuller/boost-skills#tags).
