@@ -37,20 +37,6 @@ final readonly class VersionResolver
     ) {}
 
     /**
-     * Convenience factory: scan the host project for installed packages.
-     * Returns a resolver with no Roster (lex-sort only) when Roster
-     * isn't autoloadable in the consumer's vendor tree.
-     */
-    public static function withHostRoster(string $basePath): self
-    {
-        if (! class_exists(Roster::class)) {
-            return new self();
-        }
-
-        return new self(Roster::scan($basePath));
-    }
-
-    /**
      * Group `$skills` by name and pick one variant per name.
      *
      * @param  list<Skill>  $skills
