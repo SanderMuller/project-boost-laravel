@@ -181,7 +181,8 @@ test('a malformed metadata.boost-tags fails closed (tagsValid false), not ships 
         $skill = $reader->readSkills()[0];
 
         expect($skill->tagsValid)->toBeFalse()
-            ->and($skill->tags)->toBe([]);
+            ->and($skill->tags)
+            ->toBeEmpty();
     } finally {
         rmFixtureRoot($root);
     }
@@ -199,7 +200,8 @@ test('an explicitly-empty metadata.boost-tags ships untagged, not via the sideca
         $reader = new LaravelBoostAssetReader($root, $manifest);
         $skill = $reader->readSkills()[0];
 
-        expect($skill->tags)->toBe([])
+        expect($skill->tags)
+            ->toBeEmpty()
             ->and($skill->tagsValid)->toBeTrue();
     } finally {
         rmFixtureRoot($root);
