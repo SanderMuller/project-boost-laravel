@@ -1,5 +1,27 @@
 # Upgrading
 
+## From 0.9 to 0.10
+
+### Changed
+
+- **Requires `sandermuller/boost-core ^0.23`** (was `^0.22`), with
+  `sandermuller/package-boost-laravel ^0.15` and `sandermuller/boost-skills
+  ^2.1`. Most apps only bump this package; boost-core resolves transitively:
+
+  ```bash
+  composer require "sandermuller/project-boost-laravel:^0.10"
+  ```
+
+  If you pin any boost package directly, move them to the `0.23` line together.
+
+### Fixed (behaviour change, no migration for valid configs)
+
+- A malformed (non-string) `metadata.boost-tags` on a laravel/boost skill now
+  **fails closed** (ships to no agent) instead of being treated as untagged and
+  shipping everywhere — matching boost-core's own tag semantics. If you somehow
+  relied on the old behaviour, fix the skill's frontmatter to a space-delimited
+  string. Valid and absent `boost-tags` are unaffected.
+
 ## From 0.8 to 0.9
 
 ### Changed
