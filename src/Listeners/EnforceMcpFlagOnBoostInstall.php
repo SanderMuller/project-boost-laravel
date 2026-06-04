@@ -38,6 +38,8 @@ use Illuminate\Console\Events\CommandStarting;
  * argument and the listener falls back to `config()`.
  *
  * @phpstan-type FlagResolver Closure(): bool
+ *
+ * @internal
  */
 final readonly class EnforceMcpFlagOnBoostInstall
 {

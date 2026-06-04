@@ -1,6 +1,5 @@
 <?php declare(strict_types=1);
 
-use SanderMuller\BoostCore\Config\BoostConfigNotFoundException;
 use SanderMuller\BoostCore\Skills\FrontmatterParser;
 
 /**
@@ -57,23 +56,6 @@ function boostCoreImportsInSrc(): array
     return array_keys($fqcns);
 }
 
-/**
- * Known @internal boost-core symbols `src/` still reaches, each tracked for
- * upstream resolution. Keep this EMPTY whenever possible.
- *
- * - `BoostConfigNotFoundException`: the console commands catch it to turn a
- *   missing boost config into a friendly hint. There is no @api existence
- *   check yet, so the only alternative is re-hardcoding the config paths (the
- *   bug 0.9.0 fixed). Resolution in flight with the boost-core maintainer —
- *   either promote it to @api, or add an @api `BoostConfig::exists()` and drop
- *   the catch. Remove this entry when that lands.
- *
- * @var list<string>
- */
-const KNOWN_INTERNAL_IN_FLIGHT = [
-    BoostConfigNotFoundException::class,
-];
-
 function boostCoreSourceFor(string $fqcn): string
 {
     $relative = str_replace(['SanderMuller\\BoostCore\\', '\\'], ['', '/'], $fqcn);
@@ -88,35 +70,23 @@ test("every boost-core symbol imported in src/ is part of boost-core's frozen @a
     // nothing would otherwise pass this test vacuously.
     expect($imports)->not->toBeEmpty();
 
+    // Match an `@api` docblock TAG line (` * @api …`), not a prose mention of
+    // "@api" elsewhere in the file — so an @internal class that merely references
+    // @api in its docs isn't mistaken for part of the frozen surface.
+    $apiTag = '/^[ \t]*\*[ \t]*@api\b/m';
+
     $notApi = [];
     foreach ($imports as $fqcn) {
         $file = boostCoreSourceFor($fqcn);
         $contents = is_file($file) ? file_get_contents($file) : false;
-        if ($contents === false || ! str_contains($contents, '@api')) {
+        if ($contents === false || preg_match($apiTag, $contents) !== 1) {
             $notApi[] = $fqcn;
         }
     }
 
-    // A non-empty list (minus the tracked in-flight allowlist) names offending
-    // @internal/unmarked symbols: re-point them onto boost-core's @api surface
-    // (PUBLIC_API.md) before depending on them.
-    expect(array_values(array_diff($notApi, KNOWN_INTERNAL_IN_FLIGHT)))
-        ->toBeEmpty();
-});
-
-test('the in-flight @internal allowlist has no stale entries', function (): void {
-    // Each allowlisted symbol MUST still be non-@api. Once the maintainer
-    // resolves one (promotes it, or supplies an @api replacement we adopt),
-    // this fails — forcing the entry's removal so the allowlist never rots.
-    foreach (KNOWN_INTERNAL_IN_FLIGHT as $fqcn) {
-        $file = boostCoreSourceFor($fqcn);
-        $raw = is_file($file) ? file_get_contents($file) : '';
-        $contents = $raw === false ? '' : $raw;
-
-        expect(str_contains($contents, '@api'))->toBeFalse(
-            "{$fqcn} is now @api (or gone) — remove it from KNOWN_INTERNAL_IN_FLIGHT.",
-        );
-    }
+    // A non-empty list names @internal/unmarked symbols: re-point them onto
+    // boost-core's @api surface (PUBLIC_API.md) before depending on them.
+    expect($notApi)->toBeEmpty();
 });
 
 test('the @api scan resolves real boost-core source files (guards against a vendor layout shift)', function (): void {

@@ -27,6 +27,8 @@ use SanderMuller\BoostCore\Skills\Skill;
  *
  * Skills without a per-major path segment (`.ai/folio/skill/...`) are
  * returned as-is — there's nothing to dedupe.
+ *
+ * @internal
  */
 final readonly class VersionResolver
 {

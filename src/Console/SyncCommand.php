@@ -36,6 +36,10 @@ use SanderMuller\ProjectBoostLaravel\Rendering\BladeRenderer;
  *     passed — Blade is already rendered in step 1, and registering a
  *     duplicate `.blade.php` renderer would collide with a host project
  *     that registered its own via `boost.php`'s `withSkillRenderers()`.
+ *
+ * @internal The `project-boost:sync` CLI contract (name, options, exit codes)
+ *           is the public promise — see PUBLIC_API.md. The class is not an
+ *           extension point.
  */
 final class SyncCommand extends Command
 {

@@ -14,6 +14,8 @@ use Symfony\Component\Yaml\Yaml;
  *     folio-routing: laravel folio
  *     fluxui-development: laravel frontend
  *     pennant-development: laravel feature-flags
+ *
+ * @internal
  */
 final readonly class LaravelBoostTagManifest
 {

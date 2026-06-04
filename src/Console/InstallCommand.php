@@ -33,6 +33,9 @@ use Throwable;
  * writer for that integration's artifacts. The `suppress_upstream_writers`
  * config flag intercepts `boost:install` invocations missing `--mcp` as a
  * belt-and-suspenders guard for those.
+ *
+ * @internal The `project-boost:install` CLI contract is the public promise —
+ *           see PUBLIC_API.md. The class is not an extension point.
  */
 final class InstallCommand extends Command
 {

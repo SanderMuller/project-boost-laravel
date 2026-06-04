@@ -55,6 +55,8 @@ use Laravel\Roster\Roster;
  *    minimum — the range the code must support). laravel/boost composes no
  *    php/8.x itself, but the content is real and version-relevant, so the
  *    wrapper surfaces the supported subset. Unknown floor → keep all.
+ *
+ * @internal
  */
 final readonly class LaravelBoostGuidelineGate
 {

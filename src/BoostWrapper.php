@@ -39,6 +39,10 @@ use Symfony\Component\Finder\Finder;
  * Guideline files (`CLAUDE.md` / `AGENTS.md` / `GEMINI.md`) are intentionally
  * NOT returned — they use ManagedRegion + operator-tracking, not wholesale
  * replacement, so they're outside this contract's stale-cleanup surface.
+ *
+ * @internal Not consumer-callable. boost-core discovers it by class-name +
+ *           `BoostWrapperContract`; its name/namespace/contract stay pinned by
+ *           that discovery (and `BoostWrapperTest`) despite `@internal`.
  */
 final class BoostWrapper implements BoostWrapperContract
 {

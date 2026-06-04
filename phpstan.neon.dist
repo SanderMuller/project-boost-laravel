@@ -48,6 +48,42 @@ parameters:
             paths:
                 - tests/*
             reportUnmatched: false
+        # This package's OWN @internal classes (the Discovery readers/gate/
+        # manifest/resolver, BoostWrapper, …) are legitimately exercised by its
+        # own tests. The tests live in the global Pest namespace, so the
+        # internalClass rule fires across the SanderMuller root boundary — but a
+        # package testing its own internals is not a real violation. Scoped to
+        # tests/ so a genuine cross-package @internal access in src/ still fails.
+        -
+            identifier: new.internalClass
+            paths:
+                - tests/*
+            reportUnmatched: false
+        -
+            identifier: staticMethod.internalClass
+            paths:
+                - tests/*
+            reportUnmatched: false
+        -
+            identifier: classConstant.internalClass
+            paths:
+                - tests/*
+            reportUnmatched: false
+        -
+            identifier: property.internalClass
+            paths:
+                - tests/*
+            reportUnmatched: false
+        -
+            identifier: parameter.internalClass
+            paths:
+                - tests/*
+            reportUnmatched: false
+        -
+            identifier: return.internalClass
+            paths:
+                - tests/*
+            reportUnmatched: false
         # Pest binds test closures' `$this` to the configured TestCase at
         # runtime, but phpstan sees `$this` as `Pest\PendingCalls\TestCall`
         # for static analysis. Two narrow regexes catch only this specific

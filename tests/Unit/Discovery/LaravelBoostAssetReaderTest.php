@@ -160,6 +160,52 @@ test('sidecar manifest fills tags when frontmatter has none', function (): void 
     }
 });
 
+test('a malformed metadata.boost-tags fails closed (tagsValid false), not ships untagged', function (): void {
+    // Regression: the reader used to treat a malformed (non-string) boost-tags
+    // as "untagged" and ship it everywhere with tagsValid:true — the opposite of
+    // boost-core's fail-closed contract. Adopting the @api BoostTags::parse makes
+    // a malformed value fail closed (ships nowhere), matching the engine. The
+    // author DECLARED boost-tags (just malformed), so it must NOT fall back to
+    // the sidecar manifest either.
+    $root = makeFixtureRoot();
+    try {
+        writeSkill(
+            $root,
+            'foo',
+            'broken-tags-skill',
+            "---\nname: broken-tags-skill\nmetadata:\n  boost-tags:\n    - php\n    - inline\n---\nbody",
+        );
+
+        $manifest = new LaravelBoostTagManifest(['broken-tags-skill' => ['from', 'sidecar']]);
+        $reader = new LaravelBoostAssetReader($root, $manifest);
+        $skill = $reader->readSkills()[0];
+
+        expect($skill->tagsValid)->toBeFalse()
+            ->and($skill->tags)->toBe([]);
+    } finally {
+        rmFixtureRoot($root);
+    }
+});
+
+test('an explicitly-empty metadata.boost-tags ships untagged, not via the sidecar', function (): void {
+    // `declaresTags` distinguishes "author declared (even empty) tags" from "no
+    // boost-tags key". An empty declared value is untagged-on-purpose, so the
+    // sidecar fallback must NOT kick in (it only fills when the key is absent).
+    $root = makeFixtureRoot();
+    try {
+        writeSkill($root, 'foo', 'empty-tags-skill', "---\nname: empty-tags-skill\nmetadata:\n  boost-tags: ''\n---\nbody");
+
+        $manifest = new LaravelBoostTagManifest(['empty-tags-skill' => ['from', 'sidecar']]);
+        $reader = new LaravelBoostAssetReader($root, $manifest);
+        $skill = $reader->readSkills()[0];
+
+        expect($skill->tags)->toBe([])
+            ->and($skill->tagsValid)->toBeTrue();
+    } finally {
+        rmFixtureRoot($root);
+    }
+});
+
 test('sourceVendor stamped as laravel/boost', function (): void {
     $root = makeFixtureRoot();
     try {

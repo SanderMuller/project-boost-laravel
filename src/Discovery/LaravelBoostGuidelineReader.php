@@ -29,6 +29,8 @@ use Throwable;
  * every package's guidelines unconditionally (a Livewire/Filament/PHPUnit app
  * would receive inertia/pest/sail guidelines, with `pest-core` contradicting
  * `phpunit-core`). A null gate preserves the pre-gate emit-all behaviour.
+ *
+ * @internal
  */
 final class LaravelBoostGuidelineReader
 {

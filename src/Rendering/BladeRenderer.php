@@ -25,6 +25,12 @@ use SanderMuller\BoostCore\Skills\Rendering\RenderContext;
  * Constructor must remain parameterless (boost-core's plugin contract).
  * The `GuidelineAssist` resolver runs via Laravel's container at render
  * time, so it has full app context.
+ *
+ * @internal This package's `SkillRenderer` implementation. It is auto-registered
+ *           on the `project-boost:sync` path — consumers never name it — and it
+ *           requires a bootstrapped Laravel `Application` (bare `vendor/bin/boost
+ *           sync` can't render Blade through it; use the artisan command). The
+ *           render contract is boost-core's `@api` `SkillRenderer`, not ours.
  */
 final class BladeRenderer implements SkillRenderer
 {

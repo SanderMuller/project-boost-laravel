@@ -31,6 +31,9 @@ use SanderMuller\ProjectBoostLaravel\Rendering\BladeRenderer;
  *
  * Use when answering "is `livewire-development` shipping for me?" or
  * "what tags do I need to add to pick up `inertia-vue-development`?".
+ *
+ * @internal The `project-boost:where` CLI contract is the public promise — see
+ *           PUBLIC_API.md. The class is not an extension point.
  */
 final class WhereCommand extends Command
 {

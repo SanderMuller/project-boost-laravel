@@ -24,6 +24,8 @@ use Throwable;
  * boost-core's own AST auto-migration. Catching it here turns the scary
  * composer abort into a one-line migration nudge.
  *
+ * @internal
+ *
  * @mixin Command
  */
 trait LoadsBoostConfig

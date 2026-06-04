@@ -11,6 +11,11 @@ use SanderMuller\ProjectBoostLaravel\Console\SyncCommand;
 use SanderMuller\ProjectBoostLaravel\Console\WhereCommand;
 use SanderMuller\ProjectBoostLaravel\Listeners\EnforceMcpFlagOnBoostInstall;
 
+/**
+ * @internal Not a consumer API — Laravel instantiates it from the
+ * `extra.laravel.providers` entry. Its FQCN is a discovery contract (don't
+ * rename; see PUBLIC_API.md), but it is not meant to be referenced or extended.
+ */
 final class ProjectBoostLaravelServiceProvider extends ServiceProvider
 {
     #[Override]

@@ -3,6 +3,7 @@
 namespace SanderMuller\ProjectBoostLaravel\Discovery;
 
 use SanderMuller\BoostCore\Contracts\SkillRenderer;
+use SanderMuller\BoostCore\Skills\BoostTags;
 use SanderMuller\BoostCore\Skills\FrontmatterParser;
 use SanderMuller\BoostCore\Skills\Rendering\RenderContext;
 use SanderMuller\BoostCore\Skills\Skill;
@@ -31,6 +32,8 @@ use Throwable;
  * Render failures are recorded in `$renderErrors` (out-param) and the
  * offending skill is skipped, mirroring boost-core's lenient default.
  * Callers can promote to strict by checking the out-param themselves.
+ *
+ * @internal
  */
 final class LaravelBoostAssetReader
 {
@@ -121,9 +124,16 @@ final class LaravelBoostAssetReader
         $name = $this->skillNameFromPath($file);
         $frontmatter = $parsed->frontmatter;
 
-        $tagsFromFrontmatter = $this->extractTags($frontmatter);
-        $sidecarTags = $this->tagManifest->tagsFor($name);
-        $tags = $tagsFromFrontmatter !== [] ? $tagsFromFrontmatter : $sidecarTags;
+        // Author-declared `metadata.boost-tags` win — tokenized + validated via
+        // boost-core's canonical BoostTags so a malformed value fails closed
+        // (ships nowhere), matching the engine. Otherwise fall back to the
+        // sidecar manifest (always-valid normalized strings).
+        if (BoostTags::declaresTags($frontmatter)) {
+            [$tags, $tagsValid] = BoostTags::parse($frontmatter);
+        } else {
+            $tags = $this->tagManifest->tagsFor($name);
+            $tagsValid = true;
+        }
 
         $description = isset($frontmatter['description']) && is_string($frontmatter['description'])
             ? $frontmatter['description']
@@ -137,7 +147,7 @@ final class LaravelBoostAssetReader
             sourcePath: $file->getPathname(),
             sourceVendor: 'laravel/boost',
             tags: $tags,
-            tagsValid: true,
+            tagsValid: $tagsValid,
         );
     }
 
@@ -147,31 +157,5 @@ final class LaravelBoostAssetReader
     private function skillNameFromPath(SplFileInfo $file): string
     {
         return basename(dirname($file->getPathname()));
-    }
-
-    /**
-     * @param  array<string, mixed>  $frontmatter
-     * @return list<string>
-     */
-    private function extractTags(array $frontmatter): array
-    {
-        $metadata = $frontmatter['metadata'] ?? null;
-        if (! is_array($metadata)) {
-            return [];
-        }
-
-        $raw = $metadata['boost-tags'] ?? null;
-        if (! is_string($raw)) {
-            return [];
-        }
-
-        $parts = preg_split('/\s+/', trim($raw));
-        if ($parts === false) {
-            return [];
-        }
-
-        $tags = array_values(array_filter($parts, static fn (string $t): bool => $t !== ''));
-
-        return array_values(array_unique($tags));
     }
 }

@@ -185,11 +185,7 @@ A `BoostWrapper` class implements boost-core's `BoostWrapperContract` (introduce
 
 **`Errors during sync: ... also published by a scanned vendor`** — a package you allowlisted via `withAllowedVendors` publishes a skill colliding with one this package injects from laravel/boost. Either rename the vendor's skill or exclude it: `->withExcludedSkills(['vendor/pkg:skill-name'])`.
 
-**Blade-templated skill output contains literal `@php` or `{{ ... }}`** — `BladeRenderer` didn't fire. Confirm `laravel/boost` is installed (`composer show laravel/boost`). On the `project-boost:sync` path the wrapper auto-registers `BladeRenderer` for the engine's own loaders, so your own `.ai/skills/<name>/SKILL.blade.php` and `.ai/guidelines/*.blade.php` render without any `boost.php` change. If you sync through bare `vendor/bin/boost sync` instead (no wrapper), register the renderer yourself in `boost.php`:
-
-```php
-->withSkillRenderers([new \SanderMuller\ProjectBoostLaravel\Rendering\BladeRenderer])
-```
+**Blade-templated skill output contains literal `@php` or `{{ ... }}`** — `BladeRenderer` didn't fire. Confirm `laravel/boost` is installed (`composer show laravel/boost`), and run the sync through **`php artisan project-boost:sync`**: that path auto-registers the renderer against a bootstrapped framework, so your `.ai/skills/<name>/SKILL.blade.php` and `.ai/guidelines/*.blade.php` render. Bare `vendor/bin/boost sync` can't render Blade — it never boots Laravel, so the renderer has no application context and fails fast with an actionable error. Use the artisan command for Blade-templated content.
 
 **`unchanged` for every file on a second sync** — that's expected. boost-core's `FileWriter` is content-aware.
 
