@@ -8,34 +8,60 @@
  * guidelines (inertia/livewire/sail/…) that `sync` suppresses for a host that
  * doesn't have those packages. Both commands now share the gate via the
  * `GatesGuidelines` concern, so `where` reports what `sync` actually emits.
+ *
+ * The fixture is a hermetic `.ai` tree pointed at via the
+ * `project-boost-laravel.laravel_boost_ai_root` override — NOT the real
+ * `vendor/laravel/boost/.ai`, which laravel/boost export-ignores (so it is
+ * absent from a prefer-dist Composer install, e.g. CI). `foundation` is a core
+ * guideline that always ships; `inertia-laravel`/`livewire` map to composer
+ * packages the testbench host lacks, so the gate suppresses them.
  */
 
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\File;
 
 $whereCwdRef = null;
+$whereAiRoot = null;
 
-beforeEach(function () use (&$whereCwdRef): void {
+beforeEach(function () use (&$whereCwdRef, &$whereAiRoot): void {
     $cwd = getcwd();
     $whereCwdRef = $cwd === false ? null : $cwd;
     chdir(base_path());
-    cleanWhereFixtures();
+
+    $whereAiRoot = base_path('tests-fixture-ai');
+    cleanWhereFixtures($whereAiRoot);
+
+    // Minimal hermetic `.ai` guideline tree (no skills needed for this gate
+    // assertion). `foundation.blade.php` is a loose core guideline; the package
+    // dirs each ship a `core.blade.php` the gate keys on by directory name.
+    File::ensureDirectoryExists($whereAiRoot . '/inertia-laravel');
+    File::ensureDirectoryExists($whereAiRoot . '/livewire');
+    file_put_contents($whereAiRoot . '/foundation.blade.php', 'Foundation guideline body.');
+    file_put_contents($whereAiRoot . '/inertia-laravel/core.blade.php', 'Inertia guideline body.');
+    file_put_contents($whereAiRoot . '/livewire/core.blade.php', 'Livewire guideline body.');
+
+    config(['project-boost-laravel.laravel_boost_ai_root' => $whereAiRoot]);
 });
 
-afterEach(function () use (&$whereCwdRef): void {
-    cleanWhereFixtures();
+afterEach(function () use (&$whereCwdRef, &$whereAiRoot): void {
+    cleanWhereFixtures($whereAiRoot);
+    $whereAiRoot = null;
     if (is_string($whereCwdRef)) {
         chdir($whereCwdRef);
         $whereCwdRef = null;
     }
 });
 
-function cleanWhereFixtures(): void
+function cleanWhereFixtures(?string $aiRoot): void
 {
     foreach ([base_path('boost.php'), base_path('.config/boost.php')] as $file) {
         if (file_exists($file)) {
             File::delete($file);
         }
+    }
+
+    if (is_string($aiRoot) && is_dir($aiRoot)) {
+        File::deleteDirectory($aiRoot);
     }
 }
 

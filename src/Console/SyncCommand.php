@@ -13,6 +13,7 @@ use SanderMuller\BoostCore\Sync\SyncResult;
 use SanderMuller\BoostCore\Sync\WriteAction;
 use SanderMuller\ProjectBoostLaravel\Console\Concerns\GatesGuidelines;
 use SanderMuller\ProjectBoostLaravel\Console\Concerns\LoadsBoostConfig;
+use SanderMuller\ProjectBoostLaravel\Console\Concerns\ResolvesAiRoot;
 use SanderMuller\ProjectBoostLaravel\Discovery\LaravelBoostAssetReader;
 use SanderMuller\ProjectBoostLaravel\Discovery\LaravelBoostGuidelineReader;
 use SanderMuller\ProjectBoostLaravel\Discovery\LaravelBoostTagManifest;
@@ -45,6 +46,7 @@ final class SyncCommand extends Command
 {
     use GatesGuidelines;
     use LoadsBoostConfig;
+    use ResolvesAiRoot;
 
     /** @var string */
     protected $signature = 'project-boost:sync
@@ -59,7 +61,7 @@ final class SyncCommand extends Command
         $blade = new BladeRenderer();
         $manifestPath = dirname(__DIR__, 2) . '/resources/boost/laravel-boost-tags.yaml';
         $manifest = LaravelBoostTagManifest::fromFile($manifestPath);
-        $aiRoot = base_path('vendor/laravel/boost/.ai');
+        $aiRoot = $this->resolveLaravelBoostAiRoot();
 
         // Scan the host roster once and share it with both the version
         // resolver (per-major skill dedupe) and the guideline install-gate
