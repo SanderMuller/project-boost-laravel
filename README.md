@@ -175,7 +175,9 @@ Declared in `boost.php` via `withRemoteSkills([RemoteSkillSource::githubBundle(.
 
 Guidelines are install-gated. `LaravelBoostGuidelineReader` emits only the core guidelines plus guidelines for packages the host actually installed, mirroring `laravel/boost`'s own `GuidelineComposer` detection (PHPUnit-vs-Pest priority, Sail opt-in, direct-only MCP / Livewire). An app never receives guidelines for packages it doesn't use — a Livewire + Filament + PHPUnit app won't get Inertia, Pest, or Sail guidance. Version-major sub-fragments are version-scoped too, on two axes: package dirs by exact installed major (a Laravel 12 app gets `laravel/12`, not `laravel/11` — they're alternative complete sets), and `php/8.x` cumulative-downward to your declared `require.php` floor (`php/8.4` features are usable on 8.5, so a project supporting `^8.3` keeps `≤8.3` and won't be told to use 8.5-only syntax it can't rely on).
 
-A `BoostWrapper` class implements boost-core's `BoostWrapperContract` (introduced in 0.11.0), declaring the per-agent skill-emit paths this package injects. A bare `vendor/bin/boost sync` (no wrapper injection) then preserves those files instead of flagging them stale-to-delete. Requires `boost-core ^0.22`.
+A `BoostWrapper` class implements boost-core's `BoostWrapperContract` (introduced in 0.11.0), declaring the per-agent skill-emit paths this package injects. A bare `vendor/bin/boost sync` (no wrapper injection) then preserves those files instead of flagging them stale-to-delete. Requires `boost-core ^0.23`.
+
+This package's own semver-protected surface — the CLI commands, config keys, and behaviour it guarantees — is documented in [`PUBLIC_API.md`](PUBLIC_API.md). It exposes no `@api` PHP classes: it's an artisan/CLI-driven wrapper, so its public contract is the commands and config, not a class API.
 
 ## Troubleshooting
 
