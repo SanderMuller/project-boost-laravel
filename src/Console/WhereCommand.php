@@ -4,12 +4,12 @@ namespace SanderMuller\ProjectBoostLaravel\Console;
 
 use Illuminate\Console\Command;
 use SanderMuller\BoostCore\Config\BoostConfig;
-use SanderMuller\BoostCore\Config\BoostConfigNotFoundException;
 use SanderMuller\BoostCore\Skills\Guideline;
 use SanderMuller\BoostCore\Skills\Skill;
 use SanderMuller\BoostCore\Sync\BoostSync;
 use SanderMuller\BoostCore\Sync\SyncResult;
 use SanderMuller\BoostCore\Sync\WriteAction;
+use SanderMuller\ProjectBoostLaravel\Console\Concerns\LoadsBoostConfig;
 use SanderMuller\ProjectBoostLaravel\Discovery\LaravelBoostAssetReader;
 use SanderMuller\ProjectBoostLaravel\Discovery\LaravelBoostGuidelineReader;
 use SanderMuller\ProjectBoostLaravel\Discovery\LaravelBoostTagManifest;
@@ -34,6 +34,8 @@ use SanderMuller\ProjectBoostLaravel\Rendering\BladeRenderer;
  */
 final class WhereCommand extends Command
 {
+    use LoadsBoostConfig;
+
     /** @var string */
     protected $signature = 'project-boost:where';
 
@@ -44,13 +46,7 @@ final class WhereCommand extends Command
     {
         $projectRoot = base_path();
 
-        try {
-            BoostConfig::load($projectRoot);
-        } catch (BoostConfigNotFoundException) {
-            $this->error('No boost config found (expected boost.php or .config/boost.php).');
-            $this->line('Create one with at least:');
-            $this->line('  return BoostConfig::configure()->withAgents([Agent::CLAUDE_CODE]);');
-
+        if (! $this->loadBoostConfigOrHint($projectRoot) instanceof BoostConfig) {
             return self::FAILURE;
         }
 

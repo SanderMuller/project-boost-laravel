@@ -108,3 +108,26 @@ it('resolves config from .config/boost.php (canonical layout), not just root boo
     expect(file_get_contents(base_path('CLAUDE.md')))
         ->toContain('CONFIG_LAYOUT_MARKER');
 });
+
+it('turns an un-migrated variadic withTags() into a migration hint, not a composer-aborting fatal', function (): void {
+    // Regression (reported by dogfooding consumers): a boost.php still using the
+    // pre-0.20 variadic withTags() throws a TypeError when project-boost:sync
+    // require()s it from composer's post-update hook — which would abort the
+    // whole `composer update` with a raw stack trace. The command must catch it
+    // and surface an actionable migration hint with a clean non-zero exit.
+    file_put_contents(base_path('boost.php'), <<<'PHP'
+        <?php declare(strict_types=1);
+
+        use SanderMuller\BoostCore\Config\BoostConfig;
+        use SanderMuller\BoostCore\Enums\Agent;
+        use SanderMuller\BoostCore\Enums\Tag;
+
+        return BoostConfig::configure()
+            ->withAgents([Agent::CLAUDE_CODE])
+            ->withTags(Tag::Laravel, Tag::Php);
+        PHP);
+
+    $this->artisan('project-boost:sync')
+        ->expectsOutputToContain('withTags')
+        ->assertExitCode(1);
+});

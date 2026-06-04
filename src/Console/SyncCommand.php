@@ -5,13 +5,13 @@ namespace SanderMuller\ProjectBoostLaravel\Console;
 use Illuminate\Console\Command;
 use Laravel\Roster\Roster;
 use SanderMuller\BoostCore\Config\BoostConfig;
-use SanderMuller\BoostCore\Config\BoostConfigNotFoundException;
 use SanderMuller\BoostCore\Skills\Guideline;
 use SanderMuller\BoostCore\Skills\Skill;
 use SanderMuller\BoostCore\Sync\BoostSync;
 use SanderMuller\BoostCore\Sync\EmitterAction;
 use SanderMuller\BoostCore\Sync\SyncResult;
 use SanderMuller\BoostCore\Sync\WriteAction;
+use SanderMuller\ProjectBoostLaravel\Console\Concerns\LoadsBoostConfig;
 use SanderMuller\ProjectBoostLaravel\Discovery\LaravelBoostAssetReader;
 use SanderMuller\ProjectBoostLaravel\Discovery\LaravelBoostGuidelineGate;
 use SanderMuller\ProjectBoostLaravel\Discovery\LaravelBoostGuidelineReader;
@@ -39,6 +39,8 @@ use SanderMuller\ProjectBoostLaravel\Rendering\BladeRenderer;
  */
 final class SyncCommand extends Command
 {
+    use LoadsBoostConfig;
+
     /** @var string */
     protected $signature = 'project-boost:sync
         {--dry-run : Preview the full SyncEngine pipeline (laravel/boost + host + scanned vendors + remote skills) in check mode.}
@@ -145,35 +147,13 @@ final class SyncCommand extends Command
     }
 
     /**
-     * Pre-flight existence check that honours BOTH the legacy root `boost.php`
-     * and the canonical `.config/boost.php` layout (boost-core >= 0.17), via the
-     * `@api` `BoostConfig::load()` resolver — so a missing config yields a
-     * friendly hint instead of an uncaught exception from `BoostSync::sync()`.
-     * Returns false (and prints the hint) when no config resolves.
-     */
-    private function ensureBoostConfig(string $projectRoot): bool
-    {
-        try {
-            BoostConfig::load($projectRoot);
-        } catch (BoostConfigNotFoundException) {
-            $this->error('No boost config found (expected boost.php or .config/boost.php).');
-            $this->line('Create one with at least:');
-            $this->line('  return BoostConfig::configure()->withAgents([Agent::CLAUDE_CODE]);');
-
-            return false;
-        }
-
-        return true;
-    }
-
-    /**
      * @param  list<Skill>  $skills
      * @param  list<Guideline>  $guidelines
      */
     private function runSync(array $skills, array $guidelines): int
     {
         $projectRoot = base_path();
-        if (! $this->ensureBoostConfig($projectRoot)) {
+        if (! $this->loadBoostConfigOrHint($projectRoot) instanceof BoostConfig) {
             return self::FAILURE;
         }
 
@@ -201,7 +181,7 @@ final class SyncCommand extends Command
     private function reportDryRun(array $skills, array $guidelines): int
     {
         $projectRoot = base_path();
-        if (! $this->ensureBoostConfig($projectRoot)) {
+        if (! $this->loadBoostConfigOrHint($projectRoot) instanceof BoostConfig) {
             return self::FAILURE;
         }
 

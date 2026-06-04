@@ -8,8 +8,8 @@ use Laravel\Boost\Install\Agents\Agent as LaravelBoostAgent;
 use Laravel\Boost\Install\AgentsDetector;
 use Laravel\Boost\Install\McpWriter;
 use SanderMuller\BoostCore\Config\BoostConfig;
-use SanderMuller\BoostCore\Config\BoostConfigNotFoundException;
 use SanderMuller\BoostCore\Enums\Agent as BoostCoreAgent;
+use SanderMuller\ProjectBoostLaravel\Console\Concerns\LoadsBoostConfig;
 use Throwable;
 
 /**
@@ -36,6 +36,8 @@ use Throwable;
  */
 final class InstallCommand extends Command
 {
+    use LoadsBoostConfig;
+
     /** @var string */
     protected $signature = 'project-boost:install
         {--no-sync : Skip the project-boost:sync step after installing MCP config.}';
@@ -99,17 +101,8 @@ final class InstallCommand extends Command
     {
         $projectRoot = base_path();
 
-        try {
-            $config = BoostConfig::load($projectRoot);
-        } catch (BoostConfigNotFoundException) {
-            $this->error('No boost config found (expected boost.php or .config/boost.php).');
-            $this->line('Non-interactive install reads agents from your boost config. Create one with at least:');
-            $this->line('  return BoostConfig::configure()->withAgents([Agent::CLAUDE_CODE]);');
-
-            return self::FAILURE;
-        } catch (Throwable $throwable) {
-            $this->error('Failed to load boost config: ' . $throwable->getMessage());
-
+        $config = $this->loadBoostConfigOrHint($projectRoot);
+        if (! $config instanceof BoostConfig) {
             return self::FAILURE;
         }
 
