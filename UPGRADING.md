@@ -1,5 +1,37 @@
 # Upgrading
 
+## From 0.10 to 1.0
+
+`1.0.0` is the API-stability commitment: the surface in `PUBLIC_API.md` (CLI
+command names + options + exit codes, config keys, discovery contracts, frozen
+formats) is locked for the `1.x` line.
+
+### Changed
+
+- **Requires `sandermuller/boost-core ^1.0`** (was `^0.23.0||^1.0`) — the `0.23`
+  range is dropped. boost-core `1.0` is a drop-in over `0.23.3` (no API break),
+  so if you are already on boost-core `^0.23` the bump is mechanical:
+
+  ```bash
+  composer require --dev "sandermuller/project-boost-laravel:^1.0"
+  ```
+
+  If you require `sandermuller/boost-core` or `sandermuller/boost-skills`
+  directly, move them to the 1.0 family in the same command (boost-skills `2.2.0`
+  already admits boost-core `^1.0`):
+
+  ```bash
+  composer require --dev \
+      "sandermuller/project-boost-laravel:^1.0" \
+      "sandermuller/boost-core:^1.0" -W
+  ```
+
+### No behaviour change
+
+- Nothing runtime changed at `1.0.0` — it is the `0.10.2` surface, re-validated
+  against the boost-core `1.x` family and frozen. The `project-boost:install` /
+  `:sync` / `:where` commands, config keys, and generated output are identical.
+
 ## From 0.9 to 0.10
 
 ### Changed

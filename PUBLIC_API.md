@@ -6,7 +6,7 @@ This package is a behavior wrapper, not a library: most of its value is the sync
 
 ## Versioning
 
-Semantic Versioning 2.0.0. Pre-`1.0.0`, MINOR bumps may break the surface below (called out in `CHANGELOG.md` / `UPGRADING.md`). From `1.0.0` on, it is locked for the `1.x` line.
+Semantic Versioning 2.0.0. From `1.0.0`, the surface below is locked for the `1.x` line — it will not break in a MINOR or PATCH. Pre-`1.0` history (where MINOR bumps could break it) is in `CHANGELOG.md` / `UPGRADING.md`.
 
 ## Stable surface
 
