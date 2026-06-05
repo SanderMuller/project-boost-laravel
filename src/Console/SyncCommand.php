@@ -18,6 +18,7 @@ use SanderMuller\ProjectBoostLaravel\Discovery\LaravelBoostAssetReader;
 use SanderMuller\ProjectBoostLaravel\Discovery\LaravelBoostGuidelineReader;
 use SanderMuller\ProjectBoostLaravel\Discovery\LaravelBoostTagManifest;
 use SanderMuller\ProjectBoostLaravel\Discovery\VersionResolver;
+use SanderMuller\ProjectBoostLaravel\Reconcile\GuidanceReconciler;
 use SanderMuller\ProjectBoostLaravel\Rendering\BladeRenderer;
 
 /**
@@ -125,9 +126,12 @@ final class SyncCommand extends Command
     private function runSync(array $skills, array $guidelines): int
     {
         $projectRoot = base_path();
-        if (! $this->loadBoostConfigOrHint($projectRoot) instanceof BoostConfig) {
+        $config = $this->loadBoostConfigOrHint($projectRoot);
+        if (! $config instanceof BoostConfig) {
             return self::FAILURE;
         }
+
+        $this->warnIfForeignSeeded($config, $projectRoot);
 
         $this->info(sprintf(
             'Injecting %d laravel/boost skills + %d guidelines into SyncEngine (Blade-rendered).',
@@ -138,6 +142,31 @@ final class SyncCommand extends Command
         $result = $this->invokeSyncEngine($projectRoot, $skills, $guidelines, checkOnly: false);
 
         return $this->renderResult($result, checkOnly: false);
+    }
+
+    /**
+     * Warn (but don't block — matching boost-core's warn-and-overwrite default)
+     * when an agent guidance file carries laravel/boost-seeded content this sync
+     * will wholesale-overwrite, pointing the operator at `project-boost:reconcile`
+     * to capture any hand-edits first.
+     */
+    private function warnIfForeignSeeded(BoostConfig $config, string $projectRoot): void
+    {
+        $atRisk = (new GuidanceReconciler())->analyze($config, $projectRoot)->atRiskFiles();
+        if ($atRisk === []) {
+            return;
+        }
+
+        $this->warn(sprintf(
+            '%d agent guidance file(s) carry laravel/boost-seeded content this sync overwrites:',
+            count($atRisk),
+        ));
+        foreach ($atRisk as $file) {
+            $this->line('  • ' . $file->relativePath . ($file->hasResidual() ? ' <fg=yellow>(has hand-edits)</>' : ''));
+        }
+
+        $this->line('Run `php artisan project-boost:reconcile` first to preserve hand-edits. Continuing…');
+        $this->newLine();
     }
 
     /**

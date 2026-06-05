@@ -109,13 +109,14 @@ See the [`boost-core` README](https://github.com/sandermuller/boost-core) for th
 
 ## Commands
 
-| Command                           | Does                                                                                                                                                                                                                               |
-|-----------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `project-boost:install`           | Wraps `boost:install --mcp` (boost owns MCP) and runs `project-boost:sync`. Auto-detects non-TTY for CI / Docker. Recommended entry point.                                                                                         |
-| `project-boost:install --no-sync` | MCP only; skip the sync.                                                                                                                                                                                                           |
-| `project-boost:sync`              | Discover, render, tag-filter, fan out to nine agents. Run after `composer install` or after editing `boost.php`.                                                                                                                   |
-| `project-boost:sync --dry-run`    | Preview the full sync pipeline (laravel/boost + host + scanned vendors + remote skills) in check mode. Requires `boost.php` or `.config/boost.php`.                                                                                 |
-| `project-boost:where`             | List the laravel/boost-bundled skills and guidelines this package injects, with per-skill ship / tag-filter / shadow status. The companion to `vendor/bin/boost where`, which covers the host, scanned-vendor, and remote origins. |
+| Command                           | Does                                                                                                                                                                                                                                                                                                                                                  |
+|-----------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `project-boost:install`           | Wraps `boost:install --mcp` (boost owns MCP) and runs `project-boost:sync`. Auto-detects non-TTY for CI / Docker. Recommended entry point.                                                                                                                                                                                                            |
+| `project-boost:install --no-sync` | MCP only; skip the sync.                                                                                                                                                                                                                                                                                                                              |
+| `project-boost:sync`              | Discover, render, tag-filter, fan out to nine agents. Run after `composer install` or after editing `boost.php`.                                                                                                                                                                                                                                      |
+| `project-boost:sync --dry-run`    | Preview the full sync pipeline (laravel/boost + host + scanned vendors + remote skills) in check mode. Requires `boost.php` or `.config/boost.php`.                                                                                                                                                                                                   |
+| `project-boost:where`             | List the laravel/boost-bundled skills and guidelines this package injects, with per-skill ship / tag-filter / shadow status. The companion to `vendor/bin/boost where`, which covers the host, scanned-vendor, and remote origins.                                                                                                                    |
+| `project-boost:reconcile`         | Capture laravel/boost-seeded guidance (the `<laravel-boost-guidelines>` block `boost:install` writes into `CLAUDE.md` / `AGENTS.md`) into `.ai/guidelines/` before a sync would overwrite it, back up each file, then sync. Run once after a first `boost:install` or when migrating. See [docs/laravel-coexistence.md](docs/laravel-coexistence.md). |
 
 ## Coexistence with `laravel/boost`
 
@@ -131,8 +132,11 @@ See the [`boost-core` README](https://github.com/sandermuller/boost-core) for th
 | Tag filtering + collision resolution                                        | **`boost-core`**                                                                     |
 | Remote skill fetching (`withRemoteSkills`)                                  | **`boost-core`**                                                                     |
 
+**First-install takeover.** `boost:install` seeds its guidelines directly into your agent files inside a `<laravel-boost-guidelines>` marker. If you have hand-edited those files, run `php artisan project-boost:reconcile` once before syncing — it captures your edits into `.ai/guidelines/` and backs the files up, so the (markerless, wholesale) sync never drops them. The full sequence and the data-loss mechanics are in [docs/laravel-coexistence.md](docs/laravel-coexistence.md).
+
 Things to avoid:
 
+- **A bare `vendor/bin/boost sync` on a wrapper project.** It bypasses this package's laravel/boost injection, assembles a smaller guidance set, and wholesale-overwrites your files with it. Always use `php artisan project-boost:sync`.
 - `php artisan boost:install` without `--mcp`. The interactive default re-engages boost's writers and races this package.
 - `php artisan boost:update`. Boost's bundled-asset refresh. Harmless but pointless; `project-boost:sync` re-renders on every run anyway.
 

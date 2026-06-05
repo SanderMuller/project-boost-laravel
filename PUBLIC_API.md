@@ -23,6 +23,7 @@ The command names, their documented options, and the exit-code contract (`0` ok,
 - `project-boost:install` — `--no-sync`, `--no-interaction`
 - `project-boost:sync` — `--dry-run`, `--show-untagged`
 - `project-boost:where`
+- `project-boost:reconcile` — `--dry-run`, `--force`, `--no-sync` (added in 1.1)
 
 Human-readable output text is NOT a contract.
 

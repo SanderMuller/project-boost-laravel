@@ -50,6 +50,12 @@ final class InstallCommand extends Command
 
     public function handle(): int
     {
+        // Suppress the standalone `boost:install` → reconcile nudge while this
+        // wrapper drives the install: it owns the post-install sequence, and
+        // `project-boost:sync`'s own foreign-seed warning already surfaces the
+        // same guidance. {@see \SanderMuller\ProjectBoostLaravel\Listeners\SuggestReconcileAfterBoostInstall}
+        $this->laravel->instance('project-boost.installing', true);
+
         if ($this->isNonInteractive()) {
             return $this->runNonInteractive();
         }

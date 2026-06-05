@@ -2,14 +2,17 @@
 
 namespace SanderMuller\ProjectBoostLaravel;
 
+use Illuminate\Console\Events\CommandFinished;
 use Illuminate\Console\Events\CommandStarting;
 use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Support\ServiceProvider;
 use Override;
 use SanderMuller\ProjectBoostLaravel\Console\InstallCommand;
+use SanderMuller\ProjectBoostLaravel\Console\ReconcileCommand;
 use SanderMuller\ProjectBoostLaravel\Console\SyncCommand;
 use SanderMuller\ProjectBoostLaravel\Console\WhereCommand;
 use SanderMuller\ProjectBoostLaravel\Listeners\EnforceMcpFlagOnBoostInstall;
+use SanderMuller\ProjectBoostLaravel\Listeners\SuggestReconcileAfterBoostInstall;
 
 /**
  * @internal Not a consumer API — Laravel instantiates it from the
@@ -31,6 +34,7 @@ final class ProjectBoostLaravelServiceProvider extends ServiceProvider
                 SyncCommand::class,
                 InstallCommand::class,
                 WhereCommand::class,
+                ReconcileCommand::class,
             ]);
 
             $this->publishes([
@@ -39,6 +43,7 @@ final class ProjectBoostLaravelServiceProvider extends ServiceProvider
 
             $events = $this->app->make(Dispatcher::class);
             $events->listen(CommandStarting::class, EnforceMcpFlagOnBoostInstall::class);
+            $events->listen(CommandFinished::class, SuggestReconcileAfterBoostInstall::class);
         }
     }
 }

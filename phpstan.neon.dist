@@ -69,6 +69,15 @@ parameters:
             paths:
                 - tests/*
             reportUnmatched: false
+        # Same rationale for this package's own @internal ENUMS (e.g.
+        # Reconcile\ReconcileStatus): the cases are referenced from our own
+        # tests, which live in the global Pest namespace, so the rule fires
+        # across the SanderMuller root boundary. Scoped to tests/.
+        -
+            identifier: classConstant.internalEnum
+            paths:
+                - tests/*
+            reportUnmatched: false
         -
             identifier: property.internalClass
             paths:
