@@ -128,7 +128,7 @@ See the [`boost-core` README](https://github.com/sandermuller/boost-core) for th
 | `CLAUDE.md` / `AGENTS.md` / `GEMINI.md` content                             | **this package** (via `boost-core`)                                                  |
 | `.{agent}/skills/<name>/SKILL.md` files                                     | **this package** (via `boost-core`)                                                  |
 | Skill content discovery + Blade rendering                                   | **this package** (`LaravelBoostAssetReader` + `BladeRenderer`)                       |
-| Versioned-variant resolution (e.g. `pest/3` vs `pest/4`)                    | **this package**. `Laravel\Roster\Roster::scan()` matches the host's installed major |
+| Versioned-variant resolution (e.g. `pest/3` vs `pest/4`)                    | **this package**. `Laravel\Roster\ProjectScan::scan()` matches the host's installed major |
 | Tag filtering + collision resolution                                        | **`boost-core`**                                                                     |
 | Remote skill fetching (`withRemoteSkills`)                                  | **`boost-core`**                                                                     |
 

@@ -5,29 +5,6 @@ All notable changes to `sandermuller/project-boost-laravel` will be documented i
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## 1.2.0 - 2026-08-05
-
-Restores compatibility with `laravel/roster` `1.0.0`, whose ground-up API rewrite made every `composer update` on a consumer app hard-crash during the `project-boost:sync` post-hook. **Action required:** this release requires `laravel/boost ^2.5` (up from `^2.4`).
-
-### Fixed
-
-- **`composer update`/`install` no longer fatals with `Class "Laravel\Roster\Enums\Packages" not found`.** `laravel/roster 1.0.0` (2026-07-18) removed the `Packages` enum and the `Roster` class this package was built against. The failure was unrecoverable rather than degrading to the intended permissive fallback: `LaravelBoostGuidelineGate::EXCLUDED_PACKAGES` referenced enum cases in a class-constant initializer, which PHP evaluates on class initialization — so `permissive()`, the graceful-fallback path itself, threw before any `class_exists()` guard could run. Package identity is now a plain composer/npm name string throughout, and `Roster::scan()` is now `ProjectScan::scan()`.
-- **Guideline dirs are resolved through `laravel/boost`'s own name mapper.** Package name → guideline dir now delegates to `PackageRegistry::guidelineName()` instead of slugifying the name locally. Pre-1.0 Roster's `Package::name()` returned the enum *case name* (`FLUXUI_PRO`), which the old slugify handled correctly; Roster 1.0 returns the composer name (`livewire/flux-pro`), which it would not have — the gate would have silently suppressed every package guideline instead of erroring.
-- **npm-ecosystem packages are gated again.** Discovery now scans both ecosystems (`php()` + `js()`), matching `laravel/boost`'s own `DiscoverPackagePaths::packages()`. The `inertia-react` / `inertia-svelte` / `inertia-vue` / `tailwindcss` guideline dirs are driven by npm packages and had no gate signal from a php-only scan.
-
-### Changed
-
-- **Requires `laravel/boost ^2.5`** (was `^2.4`) — `Laravel\Boost\Support\PackageRegistry`, which this package now mirrors for package constants and the name → dir map, was introduced in `2.5.0` alongside boost's own Roster 1.0 adaptation. `2.4.x` still requires `laravel/roster ^0.5`.
-- **`laravel/roster ^1.0` is now an explicit requirement.** It was only ever pulled in transitively through `laravel/boost`, despite this package type-hinting its classes directly — which is how a major upstream rewrite reached consumers with no constraint to stop it.
-- **The known-package universe is derived from the dirs `laravel/boost` ships** under `.ai/`, rather than enumerated from a hardcoded list. Roster 1.0 removed the enum that supplied it, and boost's replacement keeps its name → dir map private. Scanning is also self-maintaining: a guideline dir boost adds in a future release is gated correctly without a release here. Verified equivalent against boost 2.5 — every package dir it ships was a `Packages` case, and the 33 enum cases with no shipped dir were already no-ops.
-- Dropped the abandoned `rector/type-perfect` dev dependency, superseded by `tomasvotruba/type-coverage`, which now bundles it. Having both installed made PHPStan abort during container compilation on a duplicate service registration — exiting non-zero with no output, so `composer qa` looked like it passed while analysing nothing.
-
-### Internal
-
-`LaravelBoostGuidelineGate::fromRoster()` is now `fromProjectScan()` and takes a `ProjectScan`; `VersionResolver` takes a `?ProjectScan`. Both are `@internal` — no `@api` or CLI surface changed, and no consumer action beyond the `laravel/boost` bump.
-
-**Full Changelog**: https://github.com/SanderMuller/project-boost-laravel/compare/1.1.0...1.2.0
-
 ## 1.1.0 - 2026-06-05
 
 <!-- verified-sha: cd1316735c6f6e36ec3ad0df05bc35a0faac5ae7 -->
