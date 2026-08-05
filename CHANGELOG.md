@@ -5,6 +5,48 @@ All notable changes to `sandermuller/project-boost-laravel` will be documented i
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.2.0 - 2026-08-05
+
+<!-- verified-sha: 5b2c79aa75f0cd17ba3ee48a45496f431ef3893d -->
+Restores compatibility with `laravel/roster 1.0.0`, whose API rewrite made every `composer update` on a consumer app hard-crash during the `project-boost:sync` post-hook.
+
+**Action required:** this release requires `laravel/boost ^2.5` (up from `^2.4`). See [UPGRADING.md](UPGRADING.md#from-11-to-12).
+
+```bash
+composer require --dev "sandermuller/project-boost-laravel:^1.2" -W
+
+```
+`-W` matters: `laravel/boost` is usually a sibling top-level require in the consuming app, so it has to move to `^2.5` in the same resolve.
+
+### Fixed
+
+- **`composer update` / `install` no longer fatals with `Class "Laravel\Roster\Enums\Packages" not found`.** `laravel/roster 1.0.0` (2026-07-18) removed the `Packages` enum and the `Roster` class this package was built against. The failure was unrecoverable rather than degrading to the intended permissive fallback: `LaravelBoostGuidelineGate::EXCLUDED_PACKAGES` referenced enum cases in a class-constant initializer, which PHP evaluates on class initialization — so `permissive()`, the graceful-fallback path itself, threw before any `class_exists()` guard could run. Package identity is now a plain composer/npm name string throughout, and `Roster::scan()` becomes `ProjectScan::scan()`.
+  
+- **Guideline dirs resolve through `laravel/boost`'s own name mapper.** Package name → guideline dir now delegates to `PackageRegistry::guidelineName()` instead of slugifying locally. Pre-1.0 Roster's `Package::name()` returned the enum *case name* (`FLUXUI_PRO`), which the old slugify handled correctly; Roster 1.0 returns the composer name (`livewire/flux-pro`), which it would not have. Left unfixed, this would have replaced the fatal with silence — every package guideline suppressed, no error.
+  
+- **npm-ecosystem packages are gated again.** Discovery scans both ecosystems (`php()` + `js()`), matching `laravel/boost`'s own `DiscoverPackagePaths::packages()`. The `inertia-react`, `inertia-svelte`, `inertia-vue` and `tailwindcss` guideline dirs are npm-driven and had no gate signal from a php-only scan.
+  
+
+### Changed
+
+- **Requires `laravel/boost ^2.5`** (was `^2.4`). `Laravel\Boost\Support\PackageRegistry` — which this package now mirrors for package constants and the name → dir map — landed in `2.5.0` alongside boost's own Roster 1.0 adaptation. `2.4.x` still requires `laravel/roster ^0.5`, so there is no version of this fix that works on the `2.4` line.
+  
+- **`laravel/roster ^1.0` is now an explicit requirement.** It was previously pulled in only transitively through `laravel/boost`, despite this package type-hinting its classes directly — which is how a major upstream rewrite reached consumers with no constraint to stop it.
+  
+- **The known-package universe is derived from the dirs `laravel/boost` ships** under `.ai/`, rather than enumerated from a hardcoded list. Roster 1.0 removed the enum that supplied it, and boost's replacement keeps its name → dir map private. Scanning is also self-maintaining: a guideline dir boost adds in a future release is gated correctly without a release here. Verified equivalent against boost 2.5 — every package dir it ships was a `Packages` case, and the enum cases with no shipped dir were already no-ops.
+  
+
+### Internal
+
+- `LaravelBoostGuidelineGate::fromRoster()` became `fromProjectScan()` and takes a `ProjectScan`; `VersionResolver` takes a `?ProjectScan`. Both are `@internal` — the `PUBLIC_API.md` surface (CLI commands, options, exit codes, config keys) is unchanged.
+  
+- Added a regression guard asserting the gate's exclusion and must-be-direct lists still match `laravel/boost`'s own. The gate is a 1:1 mirror of `DiscoverPackagePaths`, and unlike a removed class, a changed policy array drifts silently — no fatal, just guidelines quietly emitted or suppressed.
+  
+- Dropped the abandoned `rector/type-perfect` dev dependency, superseded by `tomasvotruba/type-coverage`, which now bundles it. Both installed made PHPStan abort during container compilation on a duplicate service registration, exiting non-zero with no output — so the quality gate looked green while analysing nothing.
+  
+
+**Full Changelog**: https://github.com/SanderMuller/project-boost-laravel/compare/1.1.0...1.2.0
+
 ## 1.1.0 - 2026-06-05
 
 <!-- verified-sha: cd1316735c6f6e36ec3ad0df05bc35a0faac5ae7 -->
@@ -93,6 +135,7 @@ Adopts the boost-core `0.23` line and locks the package's `@api`/`@internal` sur
   
   
   
+  
   ```
   If you require any boost package directly, move them to the `0.23` line together. Running against `boost-core < 0.23` no longer resolves.
   
@@ -141,6 +184,7 @@ Adopts the boost-core `0.22` line and moves every sync-driving and wrapper code 
   
   ```bash
   composer require "sandermuller/project-boost-laravel:^0.9"
+  
   
   
   
@@ -225,6 +269,7 @@ composer require sandermuller/boost-core:^0.16
 
 
 
+
 ```
 **Why ^0.16 specifically.** boost-skills 2.0 migrated its skills to render-time conventions tokens. Its Jira skills inline a `mcp.jira` sub-key conventions token that only resolves on boost-core 0.16 — on 0.15 the resolver short-circuits the open-vocab schema leaf and emits the token raw (broken skill body). So a project on boost-skills 2.0 needs boost-core 0.16 at render time; aligning this package's floor to `^0.16` keeps the two in lockstep and avoids a resolution conflict (boost-skills 2.0 declares its own direct `boost-core ^0.16`).
 
@@ -240,6 +285,7 @@ Not consumer-facing, but for contributors: `sandermuller/boost-skills` `^1.9 →
 composer require sandermuller/boost-core:^0.16   # or just composer update if tracked transitively
 composer update sandermuller/project-boost-laravel sandermuller/boost-core
 php artisan project-boost:sync
+
 
 
 
@@ -298,6 +344,7 @@ composer require sandermuller/boost-core:^0.14
 
 
 
+
 ```
 (Consumers who track boost-core transitively through this package get it on a `composer update --with-all-dependencies` — no explicit require needed.)
 
@@ -326,6 +373,7 @@ Crosses the package to **`boost-core ^0.13`** (floor bump — adopters must move
 
 ```bash
 composer require sandermuller/boost-core:^0.13
+
 
 
 
@@ -369,6 +417,7 @@ The dev-only `sandermuller/package-boost-php` constraint moved to `^0.15.0` (it 
 composer require sandermuller/boost-core:^0.13
 composer update sandermuller/project-boost-laravel sandermuller/boost-core
 php artisan project-boost:sync
+
 
 
 
@@ -616,6 +665,7 @@ declaration.
 
 
 
+
 ```
 Combined with the engine's 0.9.3 safety gate (which converts the thrown exception into a `SyncResult::error` rather than letting it propagate mid-write), the worst-case path is now: operator sees a clear message, no partial writes happen, recovery is straightforward.
 
@@ -679,6 +729,7 @@ Sync complete · wrote=1 · deleted=0 · unchanged=118
 
 
 
+
 ```
 Same output between "no divergence" and "divergence resolved by re-render" runs. Operator sees the re-render happened but gets no signal explaining the WHY — even when the engine emitted a parseable-divergence warning to the diagnostics channel.
 
@@ -694,6 +745,7 @@ Project Conventions
   ⚠ db-strategy: CLAUDE.md body diverged from boost.php's withConventions(); re-rendered from boost.php as canonical source.
 
 Sync complete · wrote=1 · deleted=0 · unchanged=118
+
 
 
 
@@ -933,6 +985,7 @@ PROJECT_BOOST_SUPPRESS_UPSTREAM=true
 
 
 
+
 ```
 A `CommandStarting` event listener intercepts the `boost:install` command and force-injects `--mcp` if it wasn't already passed. laravel/boost short-circuits its feature-selection step (the gate for its guideline + skill writers) when `--mcp` is set, so the user-visible outcome matches what `--mcp` would have produced.
 
@@ -975,6 +1028,7 @@ If you want the defensive `suppress_upstream_writers` guardrail active, add `PRO
 
 ```bash
 php artisan project-boost:where
+
 
 
 
@@ -1114,6 +1168,7 @@ This package closes those gaps. laravel/boost still owns the MCP server (its cor
 
 ```bash
 composer require --dev sandermuller/project-boost-laravel
+
 
 
 
