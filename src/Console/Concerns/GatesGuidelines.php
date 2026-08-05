@@ -2,7 +2,7 @@
 
 namespace SanderMuller\ProjectBoostLaravel\Console\Concerns;
 
-use Laravel\Roster\Roster;
+use Laravel\Roster\ProjectScan;
 use SanderMuller\ProjectBoostLaravel\Discovery\LaravelBoostGuidelineGate;
 
 /**
@@ -17,14 +17,14 @@ use SanderMuller\ProjectBoostLaravel\Discovery\LaravelBoostGuidelineGate;
  */
 trait GatesGuidelines
 {
-    private function guidelineGate(?Roster $roster, string $aiRoot, string $projectRoot): LaravelBoostGuidelineGate
+    private function guidelineGate(?ProjectScan $scan, string $aiRoot, string $projectRoot): LaravelBoostGuidelineGate
     {
-        if (! $roster instanceof Roster) {
+        if (! $scan instanceof ProjectScan) {
             return LaravelBoostGuidelineGate::permissive();
         }
 
-        return LaravelBoostGuidelineGate::fromRoster(
-            $roster,
+        return LaravelBoostGuidelineGate::fromProjectScan(
+            $scan,
             $aiRoot,
             $this->detectPhpFloor($projectRoot . '/composer.json'),
         );

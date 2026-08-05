@@ -3,7 +3,7 @@
 namespace SanderMuller\ProjectBoostLaravel\Console;
 
 use Illuminate\Console\Command;
-use Laravel\Roster\Roster;
+use Laravel\Roster\ProjectScan;
 use SanderMuller\BoostCore\Config\BoostConfig;
 use SanderMuller\BoostCore\Skills\Guideline;
 use SanderMuller\BoostCore\Skills\Skill;
@@ -64,10 +64,10 @@ final class SyncCommand extends Command
         $manifest = LaravelBoostTagManifest::fromFile($manifestPath);
         $aiRoot = $this->resolveLaravelBoostAiRoot();
 
-        // Scan the host roster once and share it with both the version
+        // Scan the host project once and share it with both the version
         // resolver (per-major skill dedupe) and the guideline install-gate
         // (suppresses guidelines for packages the host hasn't installed).
-        $roster = class_exists(Roster::class) ? Roster::scan(base_path()) : null;
+        $scan = class_exists(ProjectScan::class) ? ProjectScan::scan(base_path()) : null;
 
         $skillReader = new LaravelBoostAssetReader(
             laravelBoostAiRoot: $aiRoot,
@@ -78,7 +78,7 @@ final class SyncCommand extends Command
             laravelBoostAiRoot: $aiRoot,
             tagManifest: $manifest,
             bladeRenderer: $blade,
-            installGate: $this->guidelineGate($roster, $aiRoot, base_path()),
+            installGate: $this->guidelineGate($scan, $aiRoot, base_path()),
         );
 
         $allSkills = $skillReader->readSkills();
@@ -99,7 +99,7 @@ final class SyncCommand extends Command
         // before injection. VersionResolver uses laravel/roster to match
         // the host's installed major when possible; falls back to lex-last
         // sourcePath when Roster can't resolve.
-        $skills = (new VersionResolver($roster))->resolve($allSkills);
+        $skills = (new VersionResolver($scan))->resolve($allSkills);
 
         // Guideline dedupe — same shape as skills. core.blade.php for a
         // package is one name; per-major guideline files include the major

@@ -1,8 +1,7 @@
 <?php declare(strict_types=1);
 
-use Laravel\Roster\Enums\Packages;
-use Laravel\Roster\Package;
-use Laravel\Roster\Roster;
+use Laravel\Boost\Support\PackageRegistry;
+use Laravel\Roster\ProjectScan;
 use SanderMuller\BoostCore\Skills\Skill;
 use SanderMuller\ProjectBoostLaravel\Discovery\VersionResolver;
 
@@ -18,12 +17,9 @@ function makeSkill(string $name, string $sourcePath): Skill
     );
 }
 
-function makeRosterWithPackage(Packages $package, string $version): Roster
+function scanWithPackage(string $package, string $version): ProjectScan
 {
-    $roster = new Roster();
-    $roster->add(new Package($package, $package->value, $version));
-
-    return $roster;
+    return scanWithPackages([[$package, true, $version]]);
 }
 
 describe('VersionResolver', function (): void {
@@ -41,8 +37,8 @@ describe('VersionResolver', function (): void {
     });
 
     it('picks the variant matching the host major when Roster knows the package', function (): void {
-        $roster = makeRosterWithPackage(Packages::PEST, '3.5.2');
-        $resolver = new VersionResolver($roster);
+        $scan = scanWithPackage(PackageRegistry::PEST, '3.5.2');
+        $resolver = new VersionResolver($scan);
 
         $skills = [
             makeSkill('pest-testing', '/vendor/laravel/boost/.ai/pest/3/skill/pest-testing/SKILL.blade.php'),
@@ -71,8 +67,8 @@ describe('VersionResolver', function (): void {
 
     it('falls back to lex-last when Roster has no entry for the package', function (): void {
         // Roster scanned a project that doesn't use Pest.
-        $roster = new Roster();
-        $resolver = new VersionResolver($roster);
+        $scan = scanWithPackages([]);
+        $resolver = new VersionResolver($scan);
 
         $skills = [
             makeSkill('pest-testing', '/vendor/laravel/boost/.ai/pest/3/skill/pest-testing/SKILL.blade.php'),
@@ -86,10 +82,43 @@ describe('VersionResolver', function (): void {
             ->toContain('/pest/4/');
     });
 
+    it('falls back to lex-last when the host package has no resolvable version', function (): void {
+        // Package::major() is null for an empty version — no major to match on.
+        $scan = scanWithPackage(PackageRegistry::PEST, '');
+        $resolver = new VersionResolver($scan);
+
+        $skills = [
+            makeSkill('pest-testing', '/vendor/laravel/boost/.ai/pest/3/skill/pest-testing/SKILL.blade.php'),
+            makeSkill('pest-testing', '/vendor/laravel/boost/.ai/pest/4/skill/pest-testing/SKILL.blade.php'),
+        ];
+
+        $resolved = $resolver->resolve($skills);
+
+        expect($resolved)->toHaveCount(1)
+            ->and($resolved[0]->sourcePath)
+            ->toContain('/pest/4/');
+    });
+
+    it('resolves a js-ecosystem package group through the npm side of the scan', function (): void {
+        $scan = scanWithPackages([], [['@inertiajs/vue3', true, '2.1.0']]);
+        $resolver = new VersionResolver($scan);
+
+        $skills = [
+            makeSkill('inertia-vue-development', '/vendor/laravel/boost/.ai/inertia-vue/1/skill/inertia-vue-development/SKILL.blade.php'),
+            makeSkill('inertia-vue-development', '/vendor/laravel/boost/.ai/inertia-vue/2/skill/inertia-vue-development/SKILL.blade.php'),
+        ];
+
+        $resolved = $resolver->resolve($skills);
+
+        expect($resolved)->toHaveCount(1)
+            ->and($resolved[0]->sourcePath)
+            ->toContain('/inertia-vue/2/');
+    });
+
     it('falls back when no variant matches the host-reported major', function (): void {
         // Host has Pest 2 — older than any variant laravel/boost ships.
-        $roster = makeRosterWithPackage(Packages::PEST, '2.0.0');
-        $resolver = new VersionResolver($roster);
+        $scan = scanWithPackage(PackageRegistry::PEST, '2.0.0');
+        $resolver = new VersionResolver($scan);
 
         $skills = [
             makeSkill('pest-testing', '/vendor/laravel/boost/.ai/pest/3/skill/pest-testing/SKILL.blade.php'),
@@ -107,8 +136,8 @@ describe('VersionResolver', function (): void {
         // Regression: SplFileInfo on Windows emits backslash separators;
         // the path regex must normalize before matching, otherwise the
         // Roster branch is silently bypassed and lex-sort takes over.
-        $roster = makeRosterWithPackage(Packages::PEST, '3.5.2');
-        $resolver = new VersionResolver($roster);
+        $scan = scanWithPackage(PackageRegistry::PEST, '3.5.2');
+        $resolver = new VersionResolver($scan);
 
         $skills = [
             makeSkill('pest-testing', 'C:\\app\\vendor\\laravel\\boost\\.ai\\pest\\3\\skill\\pest-testing\\SKILL.blade.php'),
@@ -123,8 +152,8 @@ describe('VersionResolver', function (): void {
     });
 
     it('handles mixed single + multi-variant input', function (): void {
-        $roster = makeRosterWithPackage(Packages::PEST, '4.1.0');
-        $resolver = new VersionResolver($roster);
+        $scan = scanWithPackage(PackageRegistry::PEST, '4.1.0');
+        $resolver = new VersionResolver($scan);
 
         $skills = [
             makeSkill('folio-routing', '/vendor/laravel/boost/.ai/folio/skill/folio-routing/SKILL.blade.php'),

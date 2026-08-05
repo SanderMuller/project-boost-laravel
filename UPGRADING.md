@@ -1,5 +1,42 @@
 # Upgrading
 
+## From 1.1 to 1.2
+
+### Changed
+
+- **Requires `laravel/boost ^2.5`** (was `^2.4`). `1.2.0` restores compatibility
+  with `laravel/roster 1.0.0`, whose API rewrite removed the `Packages` enum and
+  the `Roster` class this package was built against — on `1.1.0` any consumer
+  running `composer update`/`install` hard-crashes during the
+  `project-boost:sync` post-hook with `Class "Laravel\Roster\Enums\Packages" not
+  found`. Only `laravel/boost 2.5.0` adapted to Roster `1.0`; `2.4.x` still
+  requires `laravel/roster ^0.5`, so there is no version of this fix that works
+  on the `2.4` line.
+
+  ```bash
+  composer require --dev "sandermuller/project-boost-laravel:^1.2" -W
+  ```
+
+  `-W` matters here: `laravel/boost` is usually a sibling top-level require in
+  the consuming app, so it needs to move to `^2.5` in the same resolve.
+
+- **`laravel/roster ^1.0` is now an explicit requirement.** It was previously
+  pulled in only transitively through `laravel/boost`, despite this package
+  type-hinting its classes directly — which is how the upstream rewrite reached
+  consumers with no constraint to stop it. No action needed unless you pin
+  `laravel/roster` yourself, in which case move it to `^1.0`.
+
+### No migration
+
+- The `PUBLIC_API.md` surface is unchanged: same CLI commands, options, exit
+  codes, and config keys. The rewritten classes (`LaravelBoostGuidelineGate`,
+  `VersionResolver`) are `@internal`.
+- Generated output is unchanged for a project whose packages Roster already
+  resolved correctly. Guideline gating for **npm** packages (`inertia-react`,
+  `inertia-svelte`, `inertia-vue`, `tailwindcss`) is now driven by the js side
+  of the scan, matching `laravel/boost`'s own discovery — if you were receiving
+  one of those guidelines without the package installed, it now correctly drops.
+
 ## From 0.10 to 1.0
 
 `1.0.0` is the API-stability commitment: the surface in `PUBLIC_API.md` (CLI

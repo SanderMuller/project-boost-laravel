@@ -2,9 +2,10 @@
 
 namespace SanderMuller\ProjectBoostLaravel\Discovery;
 
-use Laravel\Roster\Enums\Packages;
+use Laravel\Boost\Support\PackageRegistry;
 use Laravel\Roster\Package;
-use Laravel\Roster\Roster;
+use Laravel\Roster\ProjectScan;
+use Symfony\Component\Finder\Finder;
 
 /**
  * Install-gate for laravel/boost guideline emission. Mirrors laravel/boost's
@@ -23,8 +24,8 @@ use Laravel\Roster\Roster;
  * installed, and `pest-core` actively contradicts `phpunit-core`. (Reported by
  * the collectiq proving consumer.)
  *
- * Construct via `fromRoster()` in production. `permissive()` (allow-all) is the
- * graceful fallback when laravel/roster can't resolve the host's packages — it
+ * Construct via `fromProjectScan()` in production. `permissive()` (allow-all) is
+ * the graceful fallback when laravel/roster can't resolve the host's packages — it
  * preserves the pre-gate emit-all behaviour rather than risk dropping legit
  * guidelines when detection is unavailable.
  *
@@ -39,14 +40,14 @@ use Laravel\Roster\Roster;
  * package-presence gate has no signal to judge them. Denying them would lose
  * guidance with no `withExcludedGuidelines` add-back lever (an asymmetry: the
  * config can remove a fragment but never re-add one), so they pass. `sail`
- * stays gated because it IS a composer package (`Packages::SAIL`) excluded from
+ * stays gated because it IS a composer package (`PackageRegistry::SAIL`) excluded from
  * discovery — matching laravel/boost's Sail-is-opt-in behaviour.
  *
  * Version-major sub-fragments are scoped via the `$versionMajor` arg to
  * `allows()`, on two different axes:
  *
  *  - **Package dirs (exact major).** laravel/boost's `GuidelineComposer` reads
- *    only `<dir>/{$package->majorVersion()}` — the host's installed major —
+ *    only `<dir>/{$package->major()}` — the host's installed major —
  *    because `laravel/11` vs `laravel/12` are alternative complete sets. So
  *    `laravel/12/core` emits on a Laravel 12 host; `laravel/11/core` drops.
  *  - **`php` dirs (cumulative floor).** `php/8.4` lists features NEW in 8.4,
@@ -70,39 +71,55 @@ final readonly class LaravelBoostGuidelineGate
     private const array CORE_SEGMENTS = ['foundation', 'php', 'boost', 'deployments'];
 
     /**
-     * Excluded from Roster-based discovery: boost is loaded as a core
+     * Guideline dirs laravel/boost gates on RUNTIME detection rather than
+     * composer presence (`GuidelineComposer::getConditionalGuidelines()`), so
+     * the package gate has no signal to judge them and must let them pass.
+     * `herd` is the only such top-level dir: `enforce-tests` is a loose
+     * `.blade.php` (never a dir, so it never enters the scanned universe),
+     * `laravel/{style,api,localization}` are sub-paths of the `laravel`
+     * package dir, and `sail` is deliberately gated — it IS a composer
+     * package, excluded from discovery to preserve boost's opt-in behaviour.
+     *
+     * @var list<string>
+     */
+    private const array RUNTIME_GATED_SEGMENTS = ['herd'];
+
+    /**
+     * Excluded from package discovery: boost is loaded as a core
      * guideline; sail requires explicit opt-in. Mirrors laravel/boost
      * `DiscoverPackagePaths::$excludedPackages`.
      *
-     * @var list<Packages>
+     * @var list<string>
      */
-    private const array EXCLUDED_PACKAGES = [Packages::BOOST, Packages::SAIL];
+    private const array EXCLUDED_PACKAGES = [PackageRegistry::BOOST, PackageRegistry::SAIL];
 
     /**
      * Only counted when a direct requirement — fixes every consumer inheriting
      * MCP / Livewire guidelines through an indirect dependency. Mirrors
      * laravel/boost `DiscoverPackagePaths::$mustBeDirect`.
      *
-     * @var list<Packages>
+     * @var list<string>
      */
-    private const array MUST_BE_DIRECT = [Packages::MCP, Packages::LIVEWIRE];
+    private const array MUST_BE_DIRECT = [PackageRegistry::MCP, PackageRegistry::LIVEWIRE];
 
     /**
      * @param  array<string, true>|null  $allowedPackageDirs  normalized package
      *   dir names that survived install + priority + exclusion filtering, keyed
      *   for O(1) lookup. Null = permissive (emit all — Roster unavailable).
-     * @param  array<string, true>  $knownPackageDirs  every dir name that maps
-     *   to a `Packages` enum case — the universe of composer-package guideline
-     *   dirs. A segment is denied only if it is in this universe but NOT in
+     * @param  array<string, true>  $knownPackageDirs  every package guideline
+     *   dir laravel/boost actually ships under the `.ai/` root — the universe
+     *   of composer-package guideline dirs. A segment is denied only if it is
+     *   in this universe but NOT in
      *   `$allowedPackageDirs`; segments outside it (e.g. `herd`, `enforce-tests`
      *   — gated by laravel/boost on runtime detection, not composer presence)
      *   pass through, since the package gate has no signal to judge them and
      *   dropping them would lose guidance with no add-back lever.
      * @param  array<string, string>  $hostMajors  installed-and-allowed package
-     *   dir name → the host's installed major version (`Package::majorVersion()`).
+     *   dir name → the host's installed major version (`Package::major()`).
      *   Drives version-major sub-fragment scoping: `<pkg>/<version>/…` emits
      *   only when `<version>` equals the host's major for `<pkg>`. Dirs absent
-     *   here (uninstalled packages) have no version subdir composed.
+     *   here (uninstalled packages, or packages Roster resolved without a
+     *   version) have no version subdir composed.
      * @param  string|null  $phpFloor  the project's declared PHP floor
      *   (`major.minor`, e.g. `8.3` from a `require.php` of `^8.3`). The `php`
      *   version dirs are cumulative-downward — `php/8.4` lists features new in
@@ -127,30 +144,46 @@ final readonly class LaravelBoostGuidelineGate
     }
 
     /**
-     * Build the gate from the host's installed-package roster. Mirrors
-     * laravel/boost `DiscoverPackagePaths::discoverPackagePaths()` +
-     * `shouldExcludePackage()`: map each installed package to its guideline
-     * dir, drop the excluded/priority-shadowed/indirect ones, keep those whose
-     * dir actually exists under the laravel/boost `.ai/` root.
+     * Build the gate from the host's project scan. Mirrors laravel/boost
+     * `DiscoverPackagePaths::discoverPackagePaths()` + `shouldExcludePackage()`:
+     * map each installed package to its guideline dir, drop the
+     * excluded/priority-shadowed/indirect ones, keep those whose dir actually
+     * exists under the laravel/boost `.ai/` root.
+     *
+     * Both ecosystems are scanned: boost's own `DiscoverPackagePaths::packages()`
+     * concats php + js, and the js side is what carries the `@inertiajs/*` and
+     * `tailwindcss` guideline dirs.
      */
-    public static function fromRoster(Roster $roster, string $aiRoot, ?string $phpFloor = null): self
+    public static function fromProjectScan(ProjectScan $scan, string $aiRoot, ?string $phpFloor = null): self
     {
         $allowed = [];
         $hostMajors = [];
 
-        foreach ($roster->packages() as $package) {
-            if (self::shouldExcludePackage($roster, $package)) {
+        $packages = $scan->php()->packages()->concat($scan->js()->packages());
+
+        foreach ($packages as $package) {
+            if (self::shouldExcludePackage($scan, $package)) {
                 continue;
             }
 
             $dir = self::normalizePackageName($package->name());
-            if (is_dir($aiRoot . '/' . $dir)) {
-                $allowed[$dir] = true;
-                $hostMajors[$dir] = $package->majorVersion();
+            if (! is_dir($aiRoot . '/' . $dir)) {
+                continue;
+            }
+
+            $allowed[$dir] = true;
+
+            // `major()` is null for a package Roster resolved without a
+            // version. Leaving the dir out of $hostMajors (rather than
+            // storing '') means no `<pkg>/<version>/…` fragment matches,
+            // which is the correct read: we don't know the host's major.
+            $major = $package->major();
+            if ($major !== null) {
+                $hostMajors[$dir] = (string) $major;
             }
         }
 
-        return new self($allowed, self::knownPackageDirs(), $hostMajors, $phpFloor);
+        return new self($allowed, self::knownPackageDirs($aiRoot), $hostMajors, $phpFloor);
     }
 
     /**
@@ -176,18 +209,38 @@ final readonly class LaravelBoostGuidelineGate
     }
 
     /**
-     * Every guideline dir name that maps to a `Packages` enum case — the
-     * universe of composer-package guideline dirs laravel/boost can ship.
-     * Used to distinguish "known package the host hasn't installed" (deny)
-     * from "not a composer package at all" (pass through).
+     * The universe of composer-package guideline dirs — every dir laravel/boost
+     * ships under `.ai/`, minus the core and runtime-gated segments. Used to
+     * distinguish "known package the host hasn't installed" (deny) from "not a
+     * composer package at all" (pass through).
+     *
+     * Scanned rather than hardcoded because nothing upstream enumerates it:
+     * `PackageRegistry` keeps its name → dir map private, exposing only the
+     * `guidelineName()` mapper. Scanning also keeps a dir boost adds in a
+     * future release gated correctly without a release here.
      *
      * @return array<string, true>
      */
-    private static function knownPackageDirs(): array
+    private static function knownPackageDirs(string $aiRoot): array
     {
+        if (! is_dir($aiRoot)) {
+            return [];
+        }
+
+        $skip = [...self::CORE_SEGMENTS, ...self::RUNTIME_GATED_SEGMENTS];
+
+        $finder = (new Finder())
+            ->in($aiRoot)
+            ->depth(0)
+            ->directories();
+
         $dirs = [];
-        foreach (Packages::cases() as $case) {
-            $dirs[self::normalizePackageName($case->name)] = true;
+        foreach ($finder as $dir) {
+            if (in_array($dir->getFilename(), $skip, true)) {
+                continue;
+            }
+
+            $dirs[$dir->getFilename()] = true;
         }
 
         return $dirs;
@@ -222,7 +275,7 @@ final readonly class LaravelBoostGuidelineGate
 
             // PACKAGE version dirs are EXACT-major — `laravel/11` vs `laravel/12`
             // are alternative complete sets, not cumulative. laravel/boost's
-            // `getPackageGuidelines` reads only `<dir>/{$package->majorVersion()}`.
+            // `getPackageGuidelines` reads only `<dir>/{$package->major()}`.
             // Emit iff `<pkg>` is installed+allowed and `<version>` is its host
             // major; wrong major (or any other non-package version dir) drops.
             return ($this->hostMajors[$segment] ?? null) === $versionMajor;
@@ -238,32 +291,45 @@ final readonly class LaravelBoostGuidelineGate
         // anything laravel/boost gates on runtime detection rather than package
         // presence — pass through: the gate has no signal to judge them, and
         // dropping a shipped fragment loses guidance with no add-back lever.
-        return ! (isset($this->knownPackageDirs[$segment]) && ! isset($this->allowedPackageDirs[$segment]));
+        return ! isset($this->knownPackageDirs[$segment]) || isset($this->allowedPackageDirs[$segment]);
     }
 
     /**
      * Mirror of laravel/boost `DiscoverPackagePaths::shouldExcludePackage()`.
      */
-    private static function shouldExcludePackage(Roster $roster, Package $package): bool
+    private static function shouldExcludePackage(ProjectScan $scan, Package $package): bool
     {
-        if (in_array($package->package(), self::EXCLUDED_PACKAGES, true)) {
+        if (in_array($package->name(), self::EXCLUDED_PACKAGES, true)) {
             return true;
         }
 
         foreach (self::packagePriorities() as $priorityPackage => $shadowedPackages) {
-            if (in_array($package->package()->value, $shadowedPackages, true)
-                && $roster->uses(Packages::from($priorityPackage))) {
+            if (in_array($package->name(), $shadowedPackages, true)
+                && self::usesPackage($scan, $priorityPackage)) {
                 return true;
             }
         }
 
-        return $package->indirect() && in_array($package->package(), self::MUST_BE_DIRECT, true);
+        return ! $package->isDirect() && in_array($package->name(), self::MUST_BE_DIRECT, true);
+    }
+
+    /**
+     * Mirror of laravel/boost `DiscoverPackagePaths::usesPackage()` — check the
+     * php ecosystem first, then js.
+     */
+    private static function usesPackage(ProjectScan $scan, string $package): bool
+    {
+        if ($scan->php()->uses($package)) {
+            return true;
+        }
+
+        return $scan->js()->uses($package);
     }
 
     /**
      * When a higher-priority package is present, the lower-priority package is
-     * excluded from guidelines — keyed by the winning package's enum value,
-     * valued with the enum values it shadows. Mirrors laravel/boost
+     * excluded from guidelines — keyed by the winning package's composer name,
+     * valued with the composer names it shadows. Mirrors laravel/boost
      * `DiscoverPackagePaths::getPackagePriorities()`.
      *
      * @return array<string, list<string>>
@@ -271,13 +337,19 @@ final readonly class LaravelBoostGuidelineGate
     private static function packagePriorities(): array
     {
         return [
-            Packages::PEST->value => [Packages::PHPUNIT->value],
-            Packages::FLUXUI_PRO->value => [Packages::FLUXUI_FREE->value],
+            PackageRegistry::PEST => [PackageRegistry::PHPUNIT],
+            PackageRegistry::FLUXUI_PRO => [PackageRegistry::FLUXUI_FREE],
         ];
     }
 
+    /**
+     * Composer/npm package name → guideline dir. Delegates to laravel/boost's
+     * own mapper so the two can't drift — the mapping is not a slugify
+     * (`livewire/flux-pro` → `fluxui-pro`, `@inertiajs/vue3` → `inertia-vue`),
+     * so a local reimplementation silently mis-gates every renamed package.
+     */
     private static function normalizePackageName(string $name): string
     {
-        return str_replace('_', '-', strtolower($name));
+        return PackageRegistry::guidelineName($name);
     }
 }

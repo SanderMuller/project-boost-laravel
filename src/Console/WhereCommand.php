@@ -3,7 +3,7 @@
 namespace SanderMuller\ProjectBoostLaravel\Console;
 
 use Illuminate\Console\Command;
-use Laravel\Roster\Roster;
+use Laravel\Roster\ProjectScan;
 use SanderMuller\BoostCore\Config\BoostConfig;
 use SanderMuller\BoostCore\Skills\Guideline;
 use SanderMuller\BoostCore\Skills\Skill;
@@ -63,10 +63,10 @@ final class WhereCommand extends Command
         $manifest = LaravelBoostTagManifest::fromFile($manifestPath);
         $aiRoot = $this->resolveLaravelBoostAiRoot();
 
-        // Scan the host roster once and share it with both the skill version
+        // Scan the host project once and share it with both the skill version
         // resolver and the guideline install-gate — so `where` reports the same
         // gated guideline set `sync` actually emits, not the full unfiltered set.
-        $roster = class_exists(Roster::class) ? Roster::scan($projectRoot) : null;
+        $scan = class_exists(ProjectScan::class) ? ProjectScan::scan($projectRoot) : null;
 
         $skillReader = new LaravelBoostAssetReader(
             laravelBoostAiRoot: $aiRoot,
@@ -77,10 +77,10 @@ final class WhereCommand extends Command
             laravelBoostAiRoot: $aiRoot,
             tagManifest: $manifest,
             bladeRenderer: $blade,
-            installGate: $this->guidelineGate($roster, $aiRoot, $projectRoot),
+            installGate: $this->guidelineGate($scan, $aiRoot, $projectRoot),
         );
 
-        $skills = (new VersionResolver($roster))->resolve($skillReader->readSkills());
+        $skills = (new VersionResolver($scan))->resolve($skillReader->readSkills());
         $guidelines = $this->dedupedGuidelines($guidelineReader->readGuidelines());
 
         if ($skills === [] && $guidelines === []) {
