@@ -11,6 +11,9 @@ use SanderMuller\BoostCore\Sync\BoostSync;
 use SanderMuller\BoostCore\Sync\EmitterAction;
 use SanderMuller\BoostCore\Sync\SyncResult;
 use SanderMuller\BoostCore\Sync\WriteAction;
+use SanderMuller\ProjectBoostLaravel\Coexistence\BoostJsonOutcome;
+use SanderMuller\ProjectBoostLaravel\Coexistence\BoostJsonRemoval;
+use SanderMuller\ProjectBoostLaravel\Coexistence\BoostJsonRemover;
 use SanderMuller\ProjectBoostLaravel\Console\Concerns\GatesGuidelines;
 use SanderMuller\ProjectBoostLaravel\Console\Concerns\LoadsBoostConfig;
 use SanderMuller\ProjectBoostLaravel\Console\Concerns\ResolvesAiRoot;
@@ -52,7 +55,8 @@ final class SyncCommand extends Command
     /** @var string */
     protected $signature = 'project-boost:sync
         {--dry-run : Preview the full SyncEngine pipeline (laravel/boost + host + scanned vendors + remote skills) in check mode.}
-        {--show-untagged : Also print the laravel/boost injection-set discovery tables (skills + guidelines, all rows including untagged).}';
+        {--show-untagged : Also print the laravel/boost injection-set discovery tables (skills + guidelines, all rows including untagged).}
+        {--keep-boost-json : Leave laravel/boost\'s boost.json in place. By default a successful sync removes it, which stops `boost:update` (and therefore `herd link`) from re-seeding behind this command.}';
 
     /** @var string */
     protected $description = 'Sync laravel/boost-bundled skills through boost-core (with Blade rendering + sidecar tags + project withTags filter).';
@@ -141,7 +145,78 @@ final class SyncCommand extends Command
 
         $result = $this->invokeSyncEngine($projectRoot, $skills, $guidelines, checkOnly: false);
 
-        return $this->renderResult($result, checkOnly: false);
+        $exit = $this->renderResult($result, checkOnly: false);
+
+        // Only after a clean sync: the state file describes emission this command
+        // has now taken over. On a failed sync laravel/boost's own path stays the
+        // fallback, so its state must survive.
+        if ($exit === self::SUCCESS) {
+            $this->reportBoostJsonRemoval($projectRoot, $config, dryRun: false);
+        }
+
+        return $exit;
+    }
+
+    /**
+     * Retire laravel/boost's `boost.json` once this sync owns the guidance and
+     * skills it describes — see {@see BoostJsonRemover} for why that is safe, why it
+     * matters (it makes the automatic `herd link` → `boost:update` re-seed inert),
+     * why the file is archived rather than deleted, and why it stays put until its
+     * agent list has been adopted. `--keep-boost-json` opts out.
+     */
+    private function reportBoostJsonRemoval(string $projectRoot, BoostConfig $config, bool $dryRun): void
+    {
+        if ($this->option('keep-boost-json')) {
+            return;
+        }
+
+        $outcome = (new BoostJsonRemover())->retire($projectRoot, $config, $dryRun);
+
+        match ($outcome->status) {
+            BoostJsonRemoval::ARCHIVED => $this->line(sprintf(
+                '  <fg=green>archived</> boost.json → %s <fg=gray>(laravel/boost install state — this sync owns the guidance + skills it described. '
+                . '`boost:update`, which `herd link` runs automatically, now refuses to run instead of re-seeding. Nothing else reads it: not the MCP server, not this command. '
+                . 'Restore it from there, or run `php artisan boost:install` to regenerate; keep it in place next time with `--keep-boost-json`.)</>',
+                $outcome->archivePath,
+            )),
+            BoostJsonRemoval::WOULD_ARCHIVE => $this->line(sprintf(
+                '  <fg=green>would-archive</> boost.json → %s <fg=gray>(a real sync moves it there so `boost:update` / `herd link` stop re-seeding. Keep it with `--keep-boost-json`.)</>',
+                $outcome->archivePath,
+            )),
+            BoostJsonRemoval::AGENTS_NOT_ADOPTED => $this->warnAgentsNotAdopted($outcome),
+            BoostJsonRemoval::NO_ARCHIVE_LOCATION => $this->warn(
+                'boost.json kept: there is no safe place to archive it. Either gitignore management is off (creating a '
+                . 'state directory would leave an untracked one behind), a path in the way is a symlink, or the archive '
+                . 'name is taken by different content. Move or delete the file yourself to stop `boost:update` — and the '
+                . '`herd link` trigger — from re-seeding.',
+            ),
+            BoostJsonRemoval::SYMLINK => $this->warn(
+                'boost.json is a symlink — left untouched. Remove it by hand if you want `boost:update` (and the `herd link` trigger) to stop re-seeding.',
+            ),
+            BoostJsonRemoval::FOREIGN => $this->line(
+                '  <fg=gray>kept boost.json — it carries none of laravel/boost\'s keys, so it belongs to something else.</>',
+            ),
+            BoostJsonRemoval::FAILED => $this->warn(
+                'Could not archive boost.json (permission or filesystem error). It is still in place, so `boost:update` will keep re-seeding.',
+            ),
+            BoostJsonRemoval::ABSENT => null,
+        };
+    }
+
+    /**
+     * The file still records agents this project's own config does not declare, and
+     * nothing imports them automatically — retiring it would destroy the only record
+     * of that choice. Say which agents, and name the command that adopts them
+     * (boost-core's install picker pre-selects exactly this set).
+     */
+    private function warnAgentsNotAdopted(BoostJsonOutcome $outcome): void
+    {
+        $this->warn(sprintf(
+            'boost.json kept: it lists agent(s) your boost config does not — %s. Run `vendor/bin/boost install` '
+            . '(its picker pre-selects them) or add them to `withAgents([...])`, then sync again; the file is '
+            . 'archived once nothing would be lost. `--keep-boost-json` silences this step entirely.',
+            implode(', ', $outcome->unadoptedAgents),
+        ));
     }
 
     /**
@@ -182,7 +257,8 @@ final class SyncCommand extends Command
     private function reportDryRun(array $skills, array $guidelines): int
     {
         $projectRoot = base_path();
-        if (! $this->loadBoostConfigOrHint($projectRoot) instanceof BoostConfig) {
+        $config = $this->loadBoostConfigOrHint($projectRoot);
+        if (! $config instanceof BoostConfig) {
             return self::FAILURE;
         }
 
@@ -199,7 +275,13 @@ final class SyncCommand extends Command
 
         $result = $this->invokeSyncEngine($projectRoot, $skills, $guidelines, checkOnly: true);
 
-        return $this->renderResult($result, checkOnly: true);
+        $exit = $this->renderResult($result, checkOnly: true);
+
+        if ($exit === self::SUCCESS) {
+            $this->reportBoostJsonRemoval($projectRoot, $config, dryRun: true);
+        }
+
+        return $exit;
     }
 
     /**
