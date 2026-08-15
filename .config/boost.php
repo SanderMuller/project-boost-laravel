@@ -40,4 +40,5 @@ return BoostConfig::configure()
         Tag::Php,
         Tag::Pest,
         'release-automation',
+        'voice',
     ]);
