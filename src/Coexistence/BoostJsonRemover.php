@@ -36,8 +36,9 @@ use SanderMuller\BoostCore\Enums\Agent;
  * config covers them, the file moves into boost's state directory instead of being
  * unlinked — gitignored, skipped by boost-core's stale-file sweep, and recoverable.
  *
- * Two further guards: a `boost.json` that does not carry laravel/boost's own keys
- * belongs to something else and is left alone, and a symlinked path is never moved.
+ * Two further guards: a `boost.json` that records no agent list is not laravel/boost's
+ * live install state — another tool's file, or one `boost:update` already refuses to
+ * act on — and is left alone; and a symlinked path is never moved.
  *
  * @internal
  */
@@ -48,10 +49,15 @@ final class BoostJsonRemover
     public const string ARCHIVE_NAME = 'boost.json.retired';
 
     /**
-     * Keys laravel/boost writes into its state file ({@see Config}).
-     * At least one must be present before the file is treated as its own.
+     * The only key that identifies the file as laravel/boost's live install state.
+     *
+     * The other keys it writes ({@see Config}: `skills`, `packages`, `cloud`, …) are
+     * generic enough that another tool's `boost.json` could carry them, and archiving
+     * a foreign config is worse than leaving an inert one alone. A non-empty `agents`
+     * list is also exactly what makes the file operative: `boost:update` bails out on
+     * `empty($config->getAgents())`, so a file without one is already no trigger.
      */
-    private const array LARAVEL_BOOST_KEYS = ['agents', 'guidelines', 'skills', 'mcp', 'packages', 'nightwatch', 'cloud', 'sail'];
+    private const string LARAVEL_BOOST_STATE_KEY = 'agents';
 
     /**
      * boost-core's state directory per config layout: `.config/boost` belongs to a
@@ -169,7 +175,7 @@ final class BoostJsonRemover
      */
     private function agentNames(array $state): array
     {
-        $agents = $state['agents'] ?? null;
+        $agents = $state[self::LARAVEL_BOOST_STATE_KEY] ?? null;
         if (! is_array($agents)) {
             return [];
         }
@@ -287,10 +293,11 @@ final class BoostJsonRemover
     }
 
     /**
-     * The decoded state file, or null when it is not laravel/boost's: unreadable,
-     * malformed JSON, not an object, or carrying none of its keys. Malformed JSON is
-     * deliberately kept — `boost:update` refuses to run on it too, so the trigger is
-     * already inert and touching it buys nothing.
+     * The decoded state file, or null when it is not laravel/boost's live install
+     * state: unreadable, malformed JSON, not an object, or carrying no agent list.
+     * Both malformed JSON and a missing agent list are deliberately kept —
+     * `boost:update` refuses to run on either, so the trigger is already inert and
+     * touching a file that may belong to another tool buys nothing.
      *
      * @return array<string, mixed>|null
      */
@@ -311,13 +318,7 @@ final class BoostJsonRemover
             return null;
         }
 
-        foreach (self::LARAVEL_BOOST_KEYS as $key) {
-            if (array_key_exists($key, $decoded)) {
-                /** @var array<string, mixed> $decoded */
-                return $decoded;
-            }
-        }
-
-        return null;
+        /** @var array<string, mixed> $decoded */
+        return $this->agentNames($decoded) === [] ? null : $decoded;
     }
 }

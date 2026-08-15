@@ -21,6 +21,14 @@ beforeEach(function () use (&$syncCwdRef): void {
     $syncCwdRef = $cwd === false ? null : $cwd;
     chdir(base_path());
     cleanSyncFixtures();
+
+    // The reader resolves `vendor/laravel/boost/.ai` relative to the CWD, which is
+    // the testbench base path here — so without an override there is no laravel/boost
+    // payload at all, and the sync deliberately keeps `boost.json` when it injected
+    // nothing. A hermetic one-guideline tree stands in for the real thing.
+    File::ensureDirectoryExists(base_path('tests-fixture-boost-ai'));
+    file_put_contents(base_path('tests-fixture-boost-ai/foundation.blade.php'), 'Vendor foundation guideline body.');
+    config(['project-boost-laravel.laravel_boost_ai_root' => base_path('tests-fixture-boost-ai')]);
 });
 
 afterEach(function () use (&$syncCwdRef): void {
@@ -57,6 +65,7 @@ function cleanSyncFixtures(): void
         base_path('.claude'),
         base_path('.codex'),
         base_path('.boost'),
+        base_path('tests-fixture-boost-ai'),
     ] as $dir) {
         if (is_dir($dir)) {
             File::deleteDirectory($dir);
@@ -241,6 +250,37 @@ it('leaves a boost.json that carries none of laravel/boost keys alone', function
     $this->artisan('project-boost:sync')->assertSuccessful();
 
     expect(file_exists(base_path('boost.json')))->toBeTrue();
+});
+
+it('leaves a boost.json that records no agent list alone', function (): void {
+    writeSyncBoostPhp();
+
+    // Another tool's boost.json can carry the generic keys laravel/boost also writes
+    // (`skills`, `packages`, `cloud`, …). Only a recorded agent list marks the file as
+    // laravel/boost's live install state — and it is what makes `boost:update` act.
+    file_put_contents(base_path('boost.json'), json_encode(['skills' => ['some-skill'], 'guidelines' => true], JSON_THROW_ON_ERROR));
+
+    $this->artisan('project-boost:sync')->assertSuccessful();
+
+    expect(file_exists(base_path('boost.json')))->toBeTrue()
+        ->and(file_exists(base_path('.boost/boost.json.retired')))->toBeFalse();
+});
+
+it('keeps boost.json when the sync injected no laravel/boost skills or guidelines', function (): void {
+    // laravel/boost export-ignores its `.ai` payload, so a prefer-dist install has
+    // none. Retiring the file there would stop `boost:update` from re-seeding content
+    // this sync cannot emit either — laravel/boost's own path must stay the fallback.
+    config(['project-boost-laravel.laravel_boost_ai_root' => base_path('tests-fixture-absent-ai')]);
+
+    writeSyncBoostPhp();
+    writeLaravelBoostJson(['claude_code']);
+
+    $this->artisan('project-boost:sync')
+        ->expectsOutputToContain('injected no laravel/boost skills or guidelines')
+        ->assertSuccessful();
+
+    expect(file_exists(base_path('boost.json')))->toBeTrue()
+        ->and(file_exists(base_path('.boost/boost.json.retired')))->toBeFalse();
 });
 
 it('archives into .config/boost when the project uses that layout', function (): void {
@@ -458,8 +498,17 @@ it("carries laravel/boost's own core guideline into the assembled guidance", fun
     // laravel/boost >= 2.5, the directive to read `.ai/rules/index.md` before
     // editing. boost-core has no `.ai/rules` pipeline of its own, so if this
     // injection ever breaks, agents silently stop being pointed at those rules.
-    // Asserted on text stable across the supported `^2.4` range rather than on the
-    // rules block itself, which 2.4 does not ship.
+    // Asserted on text stable across the supported `^2.5` range rather than on the
+    // rules block itself.
+    //
+    // The reader resolves `vendor/laravel/boost/.ai` relative to the CWD, which
+    // these tests point at the testbench base path — so it needs the absolute
+    // path to THIS package's vendor dir via the documented override. laravel/boost
+    // export-ignores `.ai`, so on a prefer-dist install (CI) the directory is
+    // absent and there is no real guideline to carry; the assertion is skipped
+    // rather than asserted against content that cannot be there.
+    config(['project-boost-laravel.laravel_boost_ai_root' => laravelBoostAiRoot()]);
+
     writeSyncBoostPhp();
 
     $this->artisan('project-boost:sync')->assertSuccessful();
@@ -467,4 +516,12 @@ it("carries laravel/boost's own core guideline into the assembled guidance", fun
     expect(file_get_contents(base_path('CLAUDE.md')))
         ->toContain('# Laravel Boost')
         ->toContain('php artisan route:list');
-});
+})->skip(fn (): bool => ! is_dir(laravelBoostAiRoot()), 'laravel/boost ships no .ai payload on a prefer-dist install.');
+
+/**
+ * Absolute path to laravel/boost's `.ai` payload in THIS package's vendor dir.
+ */
+function laravelBoostAiRoot(): string
+{
+    return dirname(__DIR__, 3) . '/vendor/laravel/boost/.ai';
+}

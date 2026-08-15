@@ -151,7 +151,7 @@ final class SyncCommand extends Command
         // has now taken over. On a failed sync laravel/boost's own path stays the
         // fallback, so its state must survive.
         if ($exit === self::SUCCESS) {
-            $this->reportBoostJsonRemoval($projectRoot, $config, dryRun: false);
+            $this->reportBoostJsonRemoval($projectRoot, $config, dryRun: false, tookOver: $skills !== [] || $guidelines !== []);
         }
 
         return $exit;
@@ -163,10 +163,27 @@ final class SyncCommand extends Command
      * matters (it makes the automatic `herd link` → `boost:update` re-seed inert),
      * why the file is archived rather than deleted, and why it stays put until its
      * agent list has been adopted. `--keep-boost-json` opts out.
+     *
+     * `$tookOver` is false when discovery found no laravel/boost skills OR guidelines
+     * at all — an absent or empty `.ai` payload. This sync then delivered none of the
+     * content the state file describes, so retiring it would disable `boost:update`
+     * without anything having taken its place.
      */
-    private function reportBoostJsonRemoval(string $projectRoot, BoostConfig $config, bool $dryRun): void
+    private function reportBoostJsonRemoval(string $projectRoot, BoostConfig $config, bool $dryRun, bool $tookOver): void
     {
         if ($this->option('keep-boost-json')) {
+            return;
+        }
+
+        if (! $tookOver) {
+            if (is_file($projectRoot . '/' . BoostJsonRemover::FILE)) {
+                $this->warn(
+                    'boost.json kept: this sync injected no laravel/boost skills or guidelines, so it has not taken over '
+                    . 'what that file describes. Retiring it here would only stop `boost:update` from re-seeding content '
+                    . 'nothing else emits.',
+                );
+            }
+
             return;
         }
 
@@ -194,7 +211,7 @@ final class SyncCommand extends Command
                 'boost.json is a symlink — left untouched. Remove it by hand if you want `boost:update` (and the `herd link` trigger) to stop re-seeding.',
             ),
             BoostJsonRemoval::FOREIGN => $this->line(
-                '  <fg=gray>kept boost.json — it carries none of laravel/boost\'s keys, so it belongs to something else.</>',
+                '  <fg=gray>kept boost.json — it records no agent list, so it is not laravel/boost\'s live install state (another tool\'s file, or one `boost:update` already refuses to act on).</>',
             ),
             BoostJsonRemoval::FAILED => $this->warn(
                 'Could not archive boost.json (permission or filesystem error). It is still in place, so `boost:update` will keep re-seeding.',
@@ -278,7 +295,7 @@ final class SyncCommand extends Command
         $exit = $this->renderResult($result, checkOnly: true);
 
         if ($exit === self::SUCCESS) {
-            $this->reportBoostJsonRemoval($projectRoot, $config, dryRun: true);
+            $this->reportBoostJsonRemoval($projectRoot, $config, dryRun: true, tookOver: $skills !== [] || $guidelines !== []);
         }
 
         return $exit;

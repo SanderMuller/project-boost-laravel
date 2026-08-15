@@ -21,7 +21,7 @@ A class-only freeze misses most of this package's contract. These are frozen too
 The command names, their documented options, and the exit-code contract (`0` ok, `1` failure):
 
 - `project-boost:install` — `--no-sync`, `--no-interaction`
-- `project-boost:sync` — `--dry-run`, `--show-untagged`, `--keep-boost-json` (added in 1.2)
+- `project-boost:sync` — `--dry-run`, `--show-untagged`, `--keep-boost-json` (added in 1.3)
 - `project-boost:where`
 - `project-boost:reconcile` — `--dry-run`, `--force`, `--no-sync` (added in 1.1)
 
