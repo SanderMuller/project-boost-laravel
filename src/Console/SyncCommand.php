@@ -151,7 +151,7 @@ final class SyncCommand extends Command
         // has now taken over. On a failed sync laravel/boost's own path stays the
         // fallback, so its state must survive.
         if ($exit === self::SUCCESS) {
-            $this->reportBoostJsonRemoval($projectRoot, $config, dryRun: false, tookOver: $skills !== [] || $guidelines !== []);
+            $this->reportBoostJsonRemoval($projectRoot, $config, dryRun: false, notTakenOver: $this->takeoverGap($skills, $guidelines, $result));
         }
 
         return $exit;
@@ -164,24 +164,22 @@ final class SyncCommand extends Command
      * why the file is archived rather than deleted, and why it stays put until its
      * agent list has been adopted. `--keep-boost-json` opts out.
      *
-     * `$tookOver` is false when discovery found no laravel/boost skills OR guidelines
-     * at all — an absent or empty `.ai` payload. This sync then delivered none of the
-     * content the state file describes, so retiring it would disable `boost:update`
-     * without anything having taken its place.
+     * `$notTakenOver` carries the reason this sync did NOT take over what the state
+     * file describes ({@see takeoverGap()}), or null when it did.
      */
-    private function reportBoostJsonRemoval(string $projectRoot, BoostConfig $config, bool $dryRun, bool $tookOver): void
+    private function reportBoostJsonRemoval(string $projectRoot, BoostConfig $config, bool $dryRun, ?string $notTakenOver): void
     {
         if ($this->option('keep-boost-json')) {
             return;
         }
 
-        if (! $tookOver) {
+        if ($notTakenOver !== null) {
             if (is_file($projectRoot . '/' . BoostJsonRemover::FILE)) {
-                $this->warn(
-                    'boost.json kept: this sync injected no laravel/boost skills or guidelines, so it has not taken over '
-                    . 'what that file describes. Retiring it here would only stop `boost:update` from re-seeding content '
-                    . 'nothing else emits.',
-                );
+                $this->warn(sprintf(
+                    'boost.json kept: %s, so this sync has not taken over what that file describes. Retiring it here '
+                    . 'would stop `boost:update` from re-seeding content nothing else emits.',
+                    $notTakenOver,
+                ));
             }
 
             return;
@@ -218,6 +216,32 @@ final class SyncCommand extends Command
             ),
             BoostJsonRemoval::ABSENT => null,
         };
+    }
+
+    /**
+     * Why this sync did not take over laravel/boost's emission — or null when it did.
+     *
+     * Two gaps leave `boost:update` as the only path to that content, so retiring its
+     * state file would disable the fallback with nothing in its place: an injection set
+     * that is empty (laravel/boost export-ignores its `.ai` payload, so a prefer-dist
+     * install has none), and a guidance file boost-core skipped because the path is a
+     * live symlink — not an error, so the sync still exits 0, but that agent's file was
+     * never written.
+     *
+     * @param  list<Skill>  $skills
+     * @param  list<Guideline>  $guidelines
+     */
+    private function takeoverGap(array $skills, array $guidelines, SyncResult $result): ?string
+    {
+        if ($skills === [] && $guidelines === []) {
+            return 'this sync injected no laravel/boost skills or guidelines';
+        }
+
+        $skippedSymlinks = $result->countByAction(WriteAction::SKIPPED_SYMLINK);
+
+        return $skippedSymlinks > 0
+            ? sprintf('%d output path(s) were skipped as symlinks, so their guidance was never written', $skippedSymlinks)
+            : null;
     }
 
     /**
@@ -295,7 +319,7 @@ final class SyncCommand extends Command
         $exit = $this->renderResult($result, checkOnly: true);
 
         if ($exit === self::SUCCESS) {
-            $this->reportBoostJsonRemoval($projectRoot, $config, dryRun: true, tookOver: $skills !== [] || $guidelines !== []);
+            $this->reportBoostJsonRemoval($projectRoot, $config, dryRun: true, notTakenOver: $this->takeoverGap($skills, $guidelines, $result));
         }
 
         return $exit;

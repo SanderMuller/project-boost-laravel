@@ -359,6 +359,30 @@ it('keeps boost.json when the state directory is a symlink', function (): void {
     }
 });
 
+it('keeps boost.json when a guidance file was skipped as a symlink', function (): void {
+    // boost-core skips a live symlink rather than writing through it, and that is not
+    // an error — the sync still exits 0. That agent's guidance was never written, so
+    // laravel/boost's own path is still the only thing emitting it.
+    writeSyncBoostPhp();
+    writeLaravelBoostJson(['claude_code']);
+
+    $target = sys_get_temp_dir() . '/pbl-guidance-' . bin2hex(random_bytes(6)) . '.md';
+    file_put_contents($target, "# Stale\n");
+    symlink($target, base_path('CLAUDE.md'));
+
+    try {
+        $this->artisan('project-boost:sync')
+            ->expectsOutputToContain('skipped as symlinks')
+            ->assertSuccessful();
+
+        expect(file_exists(base_path('boost.json')))->toBeTrue()
+            ->and(file_exists(base_path('.boost/boost.json.retired')))->toBeFalse();
+    } finally {
+        @unlink(base_path('CLAUDE.md'));
+        @unlink($target);
+    }
+});
+
 it('never overwrites an existing archive that holds different content', function (): void {
     writeSyncBoostPhp();
     File::ensureDirectoryExists(base_path('.boost'));
