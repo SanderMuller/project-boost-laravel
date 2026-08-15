@@ -96,6 +96,8 @@ final class BoostJsonRemover
             return new BoostJsonOutcome(BoostJsonRemoval::AGENTS_NOT_ADOPTED, unadoptedAgents: $unadopted);
         }
 
+        $unsupported = $this->unsupportedAgents($state);
+
         $archiveDirRelative = $this->archiveDirectory($root, $config);
         if ($archiveDirRelative === null) {
             return new BoostJsonOutcome(BoostJsonRemoval::NO_ARCHIVE_LOCATION);
@@ -107,14 +109,14 @@ final class BoostJsonRemover
         }
 
         if ($dryRun) {
-            return new BoostJsonOutcome(BoostJsonRemoval::WOULD_ARCHIVE, archivePath: $target['path']);
+            return new BoostJsonOutcome(BoostJsonRemoval::WOULD_ARCHIVE, unsupportedAgents: $unsupported, archivePath: $target['path']);
         }
 
         // An archive already holding this exact content makes the source redundant:
         // the recovery copy is there, so removing the original loses nothing.
         if (! $target['move']) {
             return @unlink($path)
-                ? new BoostJsonOutcome(BoostJsonRemoval::ARCHIVED, archivePath: $target['path'])
+                ? new BoostJsonOutcome(BoostJsonRemoval::ARCHIVED, unsupportedAgents: $unsupported, archivePath: $target['path'])
                 : new BoostJsonOutcome(BoostJsonRemoval::FAILED);
         }
 
@@ -131,7 +133,29 @@ final class BoostJsonRemover
             return new BoostJsonOutcome(BoostJsonRemoval::FAILED);
         }
 
-        return new BoostJsonOutcome(BoostJsonRemoval::ARCHIVED, archivePath: $target['path']);
+        return new BoostJsonOutcome(BoostJsonRemoval::ARCHIVED, unsupportedAgents: $unsupported, archivePath: $target['path']);
+    }
+
+    /**
+     * laravel/boost agent names boost-core has no case for (`antigravity`, `factory`,
+     * `grok_build`, `pi`, `zed`). No config could adopt them, so blocking retirement on
+     * one would mean the file is never retired — but nothing this package emits reaches
+     * those agents either, so retiring it does end their guidance updates. Reported, not
+     * blocking.
+     *
+     * @param  array<string, mixed>  $state
+     * @return list<string>
+     */
+    private function unsupportedAgents(array $state): array
+    {
+        $unsupported = [];
+        foreach ($this->agentNames($state) as $name) {
+            if (! Agent::tryFrom(str_replace('_', '-', $name)) instanceof Agent) {
+                $unsupported[$name] = true;
+            }
+        }
+
+        return array_keys($unsupported);
     }
 
     /**

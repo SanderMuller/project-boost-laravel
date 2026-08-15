@@ -216,6 +216,15 @@ final class SyncCommand extends Command
             ),
             BoostJsonRemoval::ABSENT => null,
         };
+
+        if ($outcome->unsupportedAgents !== []) {
+            $this->warn(sprintf(
+                'boost.json also recorded agent(s) boost-core has no case for — %s. Nothing this package emits reaches '
+                . 'them, and retiring the file ends laravel/boost\'s updates for them too. Keep the file with '
+                . '`--keep-boost-json` if those agents still matter to you.',
+                implode(', ', $outcome->unsupportedAgents),
+            ));
+        }
     }
 
     /**

@@ -213,7 +213,11 @@ it('does not let an agent boost-core has no case for block the archive', functio
     writeSyncBoostPhp(['Agent::CLAUDE_CODE']);
     writeLaravelBoostJson(['claude_code', 'zed']);
 
-    $this->artisan('project-boost:sync')->assertSuccessful();
+    // Retiring the file does end laravel/boost's updates for `zed`, and nothing here
+    // emits to it — so the operator is told, by name, rather than left to notice.
+    $this->artisan('project-boost:sync')
+        ->expectsOutputToContain('zed')
+        ->assertSuccessful();
 
     expect(file_exists(base_path('boost.json')))->toBeFalse()
         ->and(file_exists(base_path('.boost/boost.json.retired')))->toBeTrue();
