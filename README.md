@@ -6,83 +6,62 @@
 [![License](https://img.shields.io/packagist/l/sandermuller/project-boost-laravel.svg?style=flat-square)](LICENSE)
 [![Laravel Boost](https://badge.laravel.cloud/boost-badge.svg?style=flat-square)](https://github.com/laravel/boost)
 
-> The Laravel-app member of the [sandermuller boost family](#which-package-fits-your-role). Sits next to [`laravel/boost`](https://github.com/laravel/boost) in the same project. Boost keeps doing what it already does: MCP server, Laravel docs API, bundled Laravel skills. This package picks up everything else — fanning the generated agent files out across nine AI coding agents instead of four, and adding the family's filtering controls (`withTags()`, `withAllowedVendors()`, `withRemoteSkills()`, `boost where`).
+> The Laravel-application member of the boost family. It sits next to
+> [`laravel/boost`](https://github.com/laravel/boost) in the same project.
+> `laravel/boost` keeps doing what it already does — the MCP server, the Laravel
+> docs API, its bundled Laravel skills — and this package takes over the
+> agent-file fan-out, adding per-project filtering, remote skill sources, and
+> origin tracing on top.
+
+**Documentation: <https://sandermuller.github.io/boost-core/packages/project-boost-laravel/>**
 
 ![overview image](overview.png)
 
-You run Laravel Boost and this package together. Neither replaces the other; the design assumes they're installed side by side.
-
-## Which package fits your role?
-
-| You're building                          | Install                                                                                           | Ships                                                                                                |
-|------------------------------------------|---------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------|
-| A PHP application (not a package)        | [`sandermuller/project-boost-php`](https://github.com/sandermuller/project-boost-php)             | App-dev skills: dependency injection, legacy coexistence + the `foundation` guideline                |
-| **A Laravel application**                | **[`sandermuller/project-boost-laravel`](https://github.com/sandermuller/project-boost-laravel)** | **`laravel/boost` MCP coexistence + nine-agent fanout + tag filter + remote skills  ← you are here** |
-| A framework-agnostic Composer package    | [`sandermuller/package-boost-php`](https://github.com/sandermuller/package-boost-php)             | Package-author skills + `lean` / `gitattributes` commands                                            |
-| A Laravel package                        | [`sandermuller/package-boost-laravel`](https://github.com/sandermuller/package-boost-laravel)     | Laravel-package skills + `McpJsonEmitter`                                                            |
-| Your own skill bundle, or custom tooling | [`sandermuller/boost-core`](https://github.com/sandermuller/boost-core)                           | The sync engine. You supply the skills.                                                              |
+You run `laravel/boost` and this package together. Neither replaces the other;
+the design assumes they are installed side by side.
 
 ## What this adds on top of `laravel/boost`
 
-|                                             | `laravel/boost` alone                   | + `project-boost-laravel`                                               |
-|---------------------------------------------|-----------------------------------------|-------------------------------------------------------------------------|
-| MCP server (`boost:mcp`)                    | ✅                                       | ✅ unchanged                                                             |
-| Laravel docs API + semantic search          | ✅                                       | ✅ unchanged                                                             |
-| Bundled Laravel skills + guidelines         | ✅                                       | ✅ re-rendered through this package's pipeline                           |
-| Tag filtering                               | —                                       | ✅ `withTags()`. Ship `inertia-vue-development` only on Inertia projects |
-| Remote skill sources                        | —                                       | ✅ `withRemoteSkills()`. Pull GitHub-published `.skill` bundles          |
-| Vendor allowlist                            | auto via `composer.json`                | ✅ explicit `withAllowedVendors()` for collision control                 |
-| `boost where` origin tracing                | —                                       | ✅ host / vendor / remote / shadow attribution                           |
-| `project-boost:where` injection-set tracing | —                                       | ✅ symmetric, for the `laravel/boost` skill set this package injects     |
-| User-scope sync                             | —                                       | ✅ `boost sync --scope=user` for globally-installed CLI tools            |
-| Doctor + path-repo audit                    | —                                       | ✅ `boost doctor --check-versions`                                       |
+Both tools write the same ten agents. What differs is the control you get over
+what reaches them.
 
-Under the hood, `project-boost:install` calls `boost:install --mcp` so laravel/boost writes its MCP client config the same way it always does, then `project-boost:sync` takes over for the nine-agent fan-out.
+| | `laravel/boost` alone | With this package |
+|---|---|---|
+| MCP server, docs API, bundled Laravel skills | Yes | Unchanged |
+| Tag filtering | — | `withTags()`. Ship `inertia-vue-development` only on Inertia projects |
+| Remote skill sources | — | `withRemoteSkills()`. Pull GitHub-published `.skill` bundles |
+| Vendor allowlist | Automatic, from `composer.json` | Explicit `withAllowedVendors()`, for collision control |
+| Origin tracing | — | `boost where`, plus `project-boost:where` for the injected set |
+| User-scope sync | — | `boost sync --scope=user`, for globally-installed CLI tools |
+| Health check | — | `boost doctor --check-versions` |
 
 ## Install
 
 ```bash
 composer require --dev sandermuller/project-boost-laravel
-```
-
-`laravel/boost` and `sandermuller/boost-core` come in transitively — do **not** require `sandermuller/boost-core` separately, it resolves through this package.
-
-## Where do the skills come from?
-
-Anywhere you want. Skill sources stack:
-
-- **Your own `.ai/skills/` folder**, hand-authored next to the rest of the project. Same convention `laravel/boost` uses, and `boost-core` picks them up automatically.
-- **A Composer-installed catalog package**. Any package that ships `resources/boost/skills/` works. I publish my personal catalog at [`sandermuller/boost-skills`](https://github.com/sandermuller/boost-skills) — adopt it if your preferences align with mine, or treat it as a template for your own. Private repo, public package, monorepo subfolder; Composer resolves all of them.
-- **External, non-Composer sources** via `withRemoteSkills()`. Pull GitHub-published `.skill` bundles or single-skill repos straight from the URL.
-- **`laravel/boost`'s bundled Laravel skills** plus whatever Laravel-aware third-party packages it knows about. Picked up through the injection seam this package adds.
-
-Mix and match freely. `withAllowedVendors()` gates Composer-scanned vendors (source 2) only — host skills (source 1), remote skills (source 3), and the `laravel/boost` bundle (source 4) are not gated by it. `withTags()` filters sources 2, 3, and 4. Host skills (source 1) bypass both gates: your project authored them, so the engine treats them as canonical and applies neither filter.
-
-## First run
-
-```bash
 php artisan project-boost:install
 ```
 
-What the wrapper does:
+`laravel/boost` and `sandermuller/boost-core` come in transitively. Do **not**
+require `boost-core` separately.
 
-1. Runs `php artisan boost:install --mcp`. Boost writes its MCP client config; the `--mcp` flag keeps its `GuidelineWriter` and `SkillWriter` dormant, so this package owns the agent-file fan-out from here on.
-2. Runs `php artisan project-boost:sync`. Discovers laravel/boost-bundled skills and guidelines, renders Blade templates, applies your `withTags()` filter, fans out to every agent you declared in `boost.php`.
-
-In CI / Docker / any non-TTY shell, the wrapper detects the absence of an interactive STDIN (`stream_isatty(STDIN)` plus the `--no-interaction` flag) and skips boost's install command entirely. It calls boost's `McpWriter` directly, once per agent in `boost.php`. No prompts, no integration multiselect, no crashes.
+`project-boost:install` wraps `boost:install --mcp`, so `laravel/boost` writes
+its MCP client config exactly as it always does, then runs
+`project-boost:sync` for the fan-out. It detects a non-TTY shell, so CI and
+Docker need no extra flags.
 
 > [!WARNING]
-> If you run `php artisan boost:install` **without** `--mcp`, boost's `GuidelineWriter` and `SkillWriter` fire and race this package over `CLAUDE.md` and the per-agent skill directories. Always go through `project-boost:install`, or pass `--mcp` explicitly. The `suppress_upstream_writers` flag below is the guardrail for muscle-memory mistakes.
+> Running `php artisan boost:install` **without** `--mcp` fires `laravel/boost`'s
+> own guideline and skill writers, which then race this package over `CLAUDE.md`
+> and the per-agent skill directories. Always go through `project-boost:install`.
 
-## `boost.php`
+Already have hand-edited agent files? Run `php artisan project-boost:reconcile`
+once before syncing. It captures your edits into `.ai/guidelines/` and backs the
+files up, so the markerless wholesale sync never drops them.
 
-> **Config location.** boost-core resolves its config from `.config/boost.php`
-> (canonical on boost-core ≥ 0.17) or a legacy root `boost.php` — this package's
-> commands honor both. laravel/boost's own `boost.json` is a separate file that
-> laravel/boost owns and resolves from the project root; it intentionally stays
-> there and is not moved under `.config/`.
+## Configuration
 
-Minimal:
+`boost.php` in the project root, or `.config/boost.php`:
 
 ```php
 use SanderMuller\BoostCore\Config\BoostConfig;
@@ -94,113 +73,33 @@ return BoostConfig::configure()
     ->withTags([Tag::Laravel, Tag::Php]);
 ```
 
-Skills are tag-gated. A skill ships if every tag in its `metadata.boost-tags` is also in your `withTags()`. Untagged skills always ship. `vendor/bin/boost tags` lists every tag your installed packages declare. For a worked example of how someone organizes a tag vocabulary across a catalog, see [`sandermuller/boost-skills`'s tag registry](https://github.com/sandermuller/boost-skills#tags).
-
-Common shapes:
-
-| Project                  | Tags                                            |
-|--------------------------|-------------------------------------------------|
-| Laravel + Livewire       | `Tag::Laravel, Tag::Php, 'livewire'`            |
-| Laravel + Inertia React  | `Tag::Laravel, Tag::Php, 'frontend', 'inertia'` |
-| Laravel API only         | `Tag::Laravel, Tag::Php`                        |
-| + Pest 4 + browser tests | add `'pest'`                                    |
-
-See the [`boost-core` README](https://github.com/sandermuller/boost-core) for the full `BoostConfig` surface.
+Every `BoostConfig` method, the tag vocabulary, and the auto-sync hook are in the
+[configuration guide](https://sandermuller.github.io/boost-core/packages/project-boost-laravel/configuration).
 
 ## Commands
 
-| Command                           | Does                                                                                                                                                                                                                                                                                                                                                  |
-|-----------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `project-boost:install`           | Wraps `boost:install --mcp` (boost owns MCP) and runs `project-boost:sync`. Auto-detects non-TTY for CI / Docker. Recommended entry point.                                                                                                                                                                                                            |
-| `project-boost:install --no-sync` | MCP only; skip the sync.                                                                                                                                                                                                                                                                                                                              |
-| `project-boost:sync`              | Discover, render, tag-filter, fan out to nine agents. Run after `composer install` or after editing `boost.php`.                                                                                                                                                                                                                                      |
-| `project-boost:sync --keep-boost-json` | Leave laravel/boost's `boost.json` in place. By default a successful sync archives it — see [Coexistence](#coexistence-with-laravelboost).                                                                                                                                                                                          |
-| `project-boost:sync --dry-run`    | Preview the full sync pipeline (laravel/boost + host + scanned vendors + remote skills) in check mode. Requires `boost.php` or `.config/boost.php`.                                                                                                                                                                                                   |
-| `project-boost:where`             | List the laravel/boost-bundled skills and guidelines this package injects, with per-skill ship / tag-filter / shadow status. The companion to `vendor/bin/boost where`, which covers the host, scanned-vendor, and remote origins.                                                                                                                    |
-| `project-boost:reconcile`         | Capture laravel/boost-seeded guidance (the `<laravel-boost-guidelines>` block `boost:install` writes into `CLAUDE.md` / `AGENTS.md`) into `.ai/guidelines/` before a sync would overwrite it, back up each file, then sync. Run once after a first `boost:install` or when migrating. See [docs/laravel-coexistence.md](docs/laravel-coexistence.md). |
+| Command | Does |
+|---|---|
+| `project-boost:install` | Wraps `boost:install --mcp` and runs the sync. The recommended entry point |
+| `project-boost:sync` | Discover, render, tag-filter, fan out. Run after `composer install` or a `boost.php` edit |
+| `project-boost:sync --dry-run` | Preview the full pipeline in check mode |
+| `project-boost:where` | The `laravel/boost` skills and guidelines this package injects, with ship / filtered / shadow status |
+| `project-boost:reconcile` | Capture `laravel/boost`-seeded guidance into `.ai/guidelines/` before a sync would overwrite it |
 
-## Coexistence with `laravel/boost`
+## Documentation
 
-| Concern                                                                     | Owner                                                                                |
-|-----------------------------------------------------------------------------|--------------------------------------------------------------------------------------|
-| MCP server (`boost:mcp` artisan command, `boost:install` MCP config writes) | **`laravel/boost`**                                                                  |
-| MCP config files (`.mcp.json`, `.amp/settings.json`, agent-specific)        | **`laravel/boost`**                                                                  |
-| Laravel docs API + semantic search                                          | **`laravel/boost`**                                                                  |
-| `CLAUDE.md` / `AGENTS.md` / `GEMINI.md` content                             | **this package** (via `boost-core`)                                                  |
-| `.{agent}/skills/<name>/SKILL.md` files                                     | **this package** (via `boost-core`)                                                  |
-| Skill content discovery + Blade rendering                                   | **this package** (`LaravelBoostAssetReader` + `BladeRenderer`)                       |
-| Versioned-variant resolution (e.g. `pest/3` vs `pest/4`)                    | **this package**. `Laravel\Roster\ProjectScan::scan()` matches the host's installed major |
-| Tag filtering + collision resolution                                        | **`boost-core`**                                                                     |
-| Remote skill fetching (`withRemoteSkills`)                                  | **`boost-core`**                                                                     |
+| Topic | Page |
+|---|---|
+| What it adds, who owns which file, the architecture | [Overview](https://sandermuller.github.io/boost-core/packages/project-boost-laravel/) |
+| Install, first run, troubleshooting | [Install](https://sandermuller.github.io/boost-core/packages/project-boost-laravel/install) |
+| `boost.php`, auto-sync, `suppress_upstream_writers` | [Configuration](https://sandermuller.github.io/boost-core/packages/project-boost-laravel/configuration) |
+| The canonical command sequence and the data-loss seam | [Coexistence with `laravel/boost`](https://sandermuller.github.io/boost-core/guide/laravel-coexistence) |
+| Tags, skill dependencies, remote skills, conventions | [Guide](https://sandermuller.github.io/boost-core/guide/what-is-boost) |
+| Every command and exit code | [CLI reference](https://sandermuller.github.io/boost-core/reference/cli) |
 
-**First-install takeover.** `boost:install` seeds its guidelines directly into your agent files inside a `<laravel-boost-guidelines>` marker. If you have hand-edited those files, run `php artisan project-boost:reconcile` once before syncing — it captures your edits into `.ai/guidelines/` and backs the files up, so the (markerless, wholesale) sync never drops them. The full sequence and the data-loss mechanics are in [docs/laravel-coexistence.md](docs/laravel-coexistence.md).
-
-**`.ai/rules/` stays laravel/boost's.** Its guideline tells agents to read `.ai/rules/index.md` before editing, and its `record-rule` MCP tool writes there. This package does not copy those rules into the guidance files — they are path-scoped and read on demand, so inlining them would duplicate what agents already fetch. What it does do is carry laravel/boost's own guideline (and therefore that instruction) into the assembly, so every agent gets it, not only the one connected to the MCP server. See [docs/laravel-coexistence.md](docs/laravel-coexistence.md).
-
-**`boost.json` is retired on a successful sync.** That file is laravel/boost's install state, and only `boost:install` and `boost:update` read it — the MCP server does not (`boost:mcp` starts a server its ServiceProvider registers unconditionally), and neither does this package, which re-derives laravel/boost's guidelines and skills from `vendor/laravel/boost/.ai/` on every run. Retiring it matters because `boost:update` refuses to run without it, and **`herd link` runs `php artisan boost:update` by itself** whenever `vendor/laravel/boost` is present — re-seeding laravel/boost's guidelines and skills behind your back. With the file gone, that trigger is inert.
-
-Two things make this safe. It is **archived, not deleted** — moved to `.boost/boost.json.retired` (`.config/boost/boost.json.retired` on that layout), both gitignored and skipped by boost-core's stale-file sweep, so it survives and stays readable. And it is **adopted first**: while it lists an agent your `boost.php` does not, the sync keeps the file and tells you, because that list is the only record of what you picked in laravel/boost's installer. `vendor/bin/boost install` pre-selects exactly those agents; adopt, sync again, and the file is archived. Agents boost-core has no case for (`zed`, `pi`, …) never block it; the sync names them instead, since nothing here emits to them and retiring the file ends laravel/boost's updates for them too. A `boost.json` recording no agent list is not laravel/boost's live install state — another tool's file, or one `boost:update` already refuses to act on — and is left alone, as is a symlinked one. A sync that took over nothing keeps the file too — an empty injection set (an absent `.ai` payload) or a guidance file skipped because its path is a live symlink. `--keep-boost-json` skips the step; `php artisan boost:install` brings the file back.
-
-Things to avoid:
-
-- **A bare `vendor/bin/boost sync` on a wrapper project.** It bypasses this package's laravel/boost injection, assembles a smaller guidance set, and wholesale-overwrites your files with it. Always use `php artisan project-boost:sync`.
-- `php artisan boost:install` without `--mcp`. The interactive default re-engages boost's writers and races this package.
-- `php artisan boost:update`. Boost's bundled-asset refresh. It rewrites the guidance files (inside its marker) and reinstalls its skill directories, so the next sync reports a takeover; `project-boost:sync` re-renders everything anyway. Retiring `boost.json` — which a successful sync does for you — makes it a no-op.
-
-## Auto-sync on `composer install`
-
-In Laravel projects using this package, wire `@php artisan project-boost:sync` into composer's post-install / post-update hooks:
-
-```jsonc
-{
-  "scripts": {
-    "post-install-cmd": ["@php artisan project-boost:sync"],
-    "post-update-cmd": ["@php artisan project-boost:sync"]
-  }
-}
-```
-
-The `@php artisan project-boost:sync` hook routes through this package's wrapper, which walks `vendor/laravel/boost/.ai/`, pre-renders Blade templates with proper container context, and injects laravel/boost-bundled skills (`pest-testing`, `livewire-development`, `filament-development`, `inertia-development`, `eloquent-models`, and the rest) into the sync call. Without this hook, those bundled skills don't reach your agent directories — host skills + scanned vendors + remote skills still sync, but the laravel/boost set silently doesn't.
-
-### Why not `BoostAutoSync::run`?
-
-`boost-core` ships a `SanderMuller\BoostCore\Scripts\BoostAutoSync::run` composer-script helper that invokes `vendor/bin/boost sync` (bare CLI). In Laravel projects using this package, that helper is the wrong hook: bare CLI bypasses this wrapper's injection pipeline entirely, so the laravel/boost-bundled skill set never reaches your agent directories. Operators who wire `BoostAutoSync::run` into their composer scripts typically don't notice — the bare-CLI sync still reports success, just against a smaller skill set than the wrapper would have surfaced. Use `@php artisan project-boost:sync` instead.
-
-A stray bare-CLI sync no longer *deletes* the wrapper's already-emitted skill files — the `BoostWrapper` contract (see [Architecture](#architecture)) declares them so the cleanup pass leaves them in place. But bare CLI still won't *(re)emit* the laravel/boost set, so `@php artisan project-boost:sync` remains the correct hook.
-
-(For non-Laravel projects consuming `boost-core` directly without a wrapper, `BoostAutoSync::run` IS the correct hook. The guidance above is Laravel-app-specific.)
-
-## Defensive flag: `suppress_upstream_writers`
-
-Set `PROJECT_BOOST_SUPPRESS_UPSTREAM=true` in `.env` to enable a `CommandStarting` listener that intercepts ad-hoc `php artisan boost:install` calls and injects `--mcp` before they run. Any truthy value works (`=true`, `=1`, `=yes`). Off by default — `project-boost:install` already does the right thing in both TTY and non-TTY modes, so the flag is belt-and-suspenders for teams worried about muscle-memory mistakes.
-
-Note: this does not suppress boost's integrations writers (cloud / sail / nightwatch). `--mcp` short-circuits feature selection only; the integrations multiselect still runs in TTY mode, and selecting one triggers its writer.
-
-## Remote skills
-
-Declared in `boost.php` via `withRemoteSkills([RemoteSkillSource::githubBundle(...), RemoteSkillSource::githubPath(...)])`. The mechanism, cache behavior, `BOOST_GITHUB_TOKEN`, and `BOOST_REMOTE_STRICT` all live in [boost-core's README](https://github.com/sandermuller/boost-core#remote-skill-sources) — same surface in this package.
-
-## Architecture
-
-`LaravelBoostAssetReader` and `LaravelBoostGuidelineReader` walk `vendor/laravel/boost/.ai/`, render any `.blade.php` files through the package's `BladeRenderer` (which uses `laravel/boost`'s own `RendersBladeGuidelines` trait so `$assist` binds correctly), and hand the resulting `Skill[]` and `Guideline[]` to boost-core via `BoostSync::sync(injectedVendorSkills, injectedVendorGuidelines)`. From there it's boost-core's normal pipeline — tag filter, collision resolution, per-agent fan-out. See [boost-core's README](https://github.com/sandermuller/boost-core) for the engine internals.
-
-Guidelines are install-gated. `LaravelBoostGuidelineReader` emits only the core guidelines plus guidelines for packages the host actually installed, mirroring `laravel/boost`'s own `GuidelineComposer` detection (PHPUnit-vs-Pest priority, Sail opt-in, direct-only MCP / Livewire). An app never receives guidelines for packages it doesn't use — a Livewire + Filament + PHPUnit app won't get Inertia, Pest, or Sail guidance. Version-major sub-fragments are version-scoped too, on two axes: package dirs by exact installed major (a Laravel 12 app gets `laravel/12`, not `laravel/11` — they're alternative complete sets), and `php/8.x` cumulative-downward to your declared `require.php` floor (`php/8.4` features are usable on 8.5, so a project supporting `^8.3` keeps `≤8.3` and won't be told to use 8.5-only syntax it can't rely on).
-
-A `BoostWrapper` class implements boost-core's `BoostWrapperContract` (introduced in 0.11.0), declaring the per-agent skill-emit paths this package injects. A bare `vendor/bin/boost sync` (no wrapper injection) then preserves those files instead of flagging them stale-to-delete. Requires `boost-core ^1.0`.
-
-This package's own semver-protected surface — the CLI commands, config keys, and behaviour it guarantees — is documented in [`PUBLIC_API.md`](PUBLIC_API.md). It exposes no `@api` PHP classes: it's an artisan/CLI-driven wrapper, so its public contract is the commands and config, not a class API.
-
-## Troubleshooting
-
-**`No boost config found (expected boost.php or .config/boost.php)`** — create one (see `boost.php` above; `.config/boost.php` is the canonical location on boost-core ≥ 0.17) or run `vendor/bin/boost install`.
-
-**`Errors during sync: ... listed more than once`** — `boost.php` declared a `withRemoteSkills` source whose skill name overlaps another source, or the laravel/boost asset reader produced two versioned variants of the same skill that didn't dedupe. The second case is a bug; please report.
-
-**`Errors during sync: ... also published by a scanned vendor`** — a package you allowlisted via `withAllowedVendors` publishes a skill colliding with one this package injects from laravel/boost. Either rename the vendor's skill or exclude it: `->withExcludedSkills(['vendor/pkg:skill-name'])`.
-
-**Blade-templated skill output contains literal `@php` or `{{ ... }}`** — `BladeRenderer` didn't fire. Confirm `laravel/boost` is installed (`composer show laravel/boost`), and run the sync through **`php artisan project-boost:sync`**: that path auto-registers the renderer against a bootstrapped framework, so your `.ai/skills/<name>/SKILL.blade.php` and `.ai/guidelines/*.blade.php` render. Bare `vendor/bin/boost sync` can't render Blade — it never boots Laravel, so the renderer has no application context and fails fast with an actionable error. Use the artisan command for Blade-templated content.
-
-**`unchanged` for every file on a second sync** — that's expected. boost-core's `FileWriter` is content-aware.
+The semver-protected surface — the commands, the config keys, and the behaviour
+this package guarantees — is in [`PUBLIC_API.md`](PUBLIC_API.md). It exposes no
+`@api` PHP classes: the public contract is the commands and the config.
 
 ## Testing
 
@@ -208,9 +107,16 @@ This package's own semver-protected surface — the CLI commands, config keys, a
 composer test
 ```
 
-Pest suite. Unit tests for discovery, version resolution, and the suppress-upstream listener, plus Testbench-backed feature tests for `project-boost:install`'s TTY-vs-non-TTY branching.
+Pest suite: unit tests for discovery, version resolution, and the
+suppress-upstream listener, plus Testbench-backed feature tests for
+`project-boost:install`'s TTY-versus-non-TTY branching.
 
-`.github/workflows/ci-smoke.yml` runs the end-to-end consumer install path on every push and PR. It spins up a fresh `laravel/laravel` app, installs this package from the checkout, runs `project-boost:install --no-sync --no-interaction` (asserts `.mcp.json` lands with the `laravel-boost` server entry), then `project-boost:sync` (asserts no Blade directives leak into rendered output).
+`.github/workflows/ci-smoke.yml` runs the consumer install path end to end on
+every push and pull request. It creates a fresh `laravel/laravel` application,
+installs this package from the checkout, runs
+`project-boost:install --no-sync --no-interaction` and asserts `.mcp.json` lands
+with the `laravel-boost` server entry, then runs `project-boost:sync` and asserts
+no Blade directives leak into the rendered output.
 
 ## License
 

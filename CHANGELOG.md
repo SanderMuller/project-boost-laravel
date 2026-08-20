@@ -90,7 +90,7 @@ Adds `project-boost:reconcile` — a guided takeover that captures laravel/boost
 
 ### Docs
 
-- New [`docs/laravel-coexistence.md`](../docs/laravel-coexistence.md): the canonical command sequence (`boost:install` once → `project-boost:reconcile` once → `project-boost:sync` ongoing), the division of labor with `laravel/boost`, and why a bare `vendor/bin/boost sync` on a wrapper project loses content. The README and `PUBLIC_API.md` (which adds `project-boost:reconcile` to the frozen CLI surface) link to it.
+- New [`docs/laravel-coexistence.md`](https://sandermuller.github.io/boost-core/guide/laravel-coexistence): the canonical command sequence (`boost:install` once → `project-boost:reconcile` once → `project-boost:sync` ongoing), the division of labor with `laravel/boost`, and why a bare `vendor/bin/boost sync` on a wrapper project loses content. The README and `PUBLIC_API.md` (which adds `project-boost:reconcile` to the frozen CLI surface) link to it.
 
 The new command is part of the `1.x` `@api`/CLI surface from this release. Requires `boost-core ^1.0`; validated across the CI matrix.
 

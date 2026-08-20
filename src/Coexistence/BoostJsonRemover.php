@@ -137,8 +137,8 @@ final class BoostJsonRemover
     }
 
     /**
-     * laravel/boost agent names boost-core has no case for (`antigravity`, `factory`,
-     * `grok_build`, `pi`, `zed`). No config could adopt them, so blocking retirement on
+     * laravel/boost agent names boost-core has no case for (`factory`, `grok_build`,
+     * `pi`, `zed`). No config could adopt them, so blocking retirement on
      * one would mean the file is never retired — but nothing this package emits reaches
      * those agents either, so retiring it does end their guidance updates. Reported, not
      * blocking.
@@ -164,8 +164,8 @@ final class BoostJsonRemover
      * and boost-core's enum is kebab-case; `claude_code` → `claude-code` is the only
      * spelling that differs, so a `_` → `-` swap covers the whole set.
      *
-     * An agent boost-core has no case for (`antigravity`, `factory`, `grok_build`,
-     * `pi`, `zed`) can never be adopted, so it must NOT block retirement — it is
+     * An agent boost-core has no case for (`factory`, `grok_build`, `pi`, `zed`)
+     * can never be adopted, so it must NOT block retirement — it is
      * reported by the sync command instead.
      *
      * @param  array<string, mixed>  $state
