@@ -88,6 +88,25 @@ final class SyncCommand extends Command
         $allSkills = $skillReader->readSkills();
         $allGuidelines = $guidelineReader->readGuidelines();
 
+        // A dropped skill, guideline, or asset still lets the sync report
+        // success, so the readers' out-params have to be spoken aloud here —
+        // an emitted SKILL.md whose `rules/*.md` links go nowhere otherwise
+        // looks identical to a healthy one.
+        foreach ([...$skillReader->renderErrors(), ...$guidelineReader->renderErrors()] as $renderError) {
+            $this->warn($renderError);
+        }
+
+        // Blade skipped for want of a renderer is not an error — it is the
+        // documented no-renderer path. Both commands wire a BladeRenderer, so
+        // this fires only if that wiring is ever removed.
+        $skippedAssets = $skillReader->skippedBladeAssets();
+        if ($skippedAssets > 0) {
+            $this->warn(sprintf(
+                '%d laravel/boost skill asset(s) skipped: no Blade renderer is wired, so files the skills link were not rendered.',
+                $skippedAssets,
+            ));
+        }
+
         // Empty laravel/boost discovery is not fatal — boost-core still has
         // host `.ai/skills/`, scanned vendors, and remote skills to process.
         // Just warn and fall through with empty injection arrays.

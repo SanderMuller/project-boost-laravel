@@ -150,3 +150,66 @@ test('never returns guideline files (CLAUDE.md / AGENTS.md / GEMINI.md)', functi
         expect(basename($path))->toBe('SKILL.md');
     }
 });
+
+test('claims each skill asset, with Blade names rewritten to .md', function (): void {
+    // boost-core emits an injected skill's assets under
+    // `<skill-dir>/<name>/<asset-path>`. An unclaimed asset is reaped by the
+    // same bare-CLI cleanup pass that would otherwise delete SKILL.md.
+    $root = wrapperProjectRoot(['pest/pest-testing' => 'blade.php']);
+    $skillDir = "{$root}/vendor/laravel/boost/.ai/pest/skill/pest-testing";
+    mkdir("{$skillDir}/rules", 0o755, true);
+    file_put_contents("{$skillDir}/rules/assertions.blade.php", 'blade');
+    file_put_contents("{$skillDir}/rules/datasets.md", 'plain');
+    file_put_contents("{$skillDir}/SKILL.md.license", 'MIT');
+    file_put_contents("{$skillDir}/rules/assertions.md~", 'stale');
+
+    $paths = BoostWrapper::injectedEmitPaths($root, ['claude-code']);
+    sort($paths);
+
+    expect($paths)->toBe([
+        '.claude/skills/pest-testing/SKILL.md',
+        '.claude/skills/pest-testing/rules/assertions.md',
+        '.claude/skills/pest-testing/rules/datasets.md',
+    ]);
+});
+
+test('claims assets from the version-resolved variant only, not every variant', function (): void {
+    $root = wrapperProjectRoot([
+        'pest/3/pest-testing' => 'blade.php',
+        'pest/4/pest-testing' => 'blade.php',
+    ]);
+    $aiRoot = "{$root}/vendor/laravel/boost/.ai";
+    mkdir("{$aiRoot}/pest/3/skill/pest-testing/rules", 0o755, true);
+    mkdir("{$aiRoot}/pest/4/skill/pest-testing/rules", 0o755, true);
+    file_put_contents("{$aiRoot}/pest/3/skill/pest-testing/rules/legacy.md", 'v3');
+    file_put_contents("{$aiRoot}/pest/4/skill/pest-testing/rules/modern.md", 'v4');
+
+    $paths = BoostWrapper::injectedEmitPaths($root, ['claude-code']);
+    sort($paths);
+
+    // A claim exempts a path from stale cleanup on EVERY sync. Claiming the
+    // pest/3 asset too would strand rules/legacy.md on disk forever once the
+    // host moves to Pest 4 — over-declaring is only safe for names, whose
+    // unemitted paths have no file to preserve. No composer.json here, so the
+    // resolver falls back to its lex-last proxy and picks pest/4.
+    expect($paths)->toBe([
+        '.claude/skills/pest-testing/SKILL.md',
+        '.claude/skills/pest-testing/rules/modern.md',
+    ]);
+});
+
+test('a host whose package scan throws still claims its skill paths', function (): void {
+    // boost-core answers a throwing injectedEmitPaths() by dropping the whole
+    // claim, and a bare `boost sync` then reaps every injected skill file. So a
+    // host with an unreadable composer.json must degrade to the lex-last
+    // variant proxy, never to an exception.
+    $root = wrapperProjectRoot([
+        'pest/3/pest-testing' => 'blade.php',
+        'pest/4/pest-testing' => 'blade.php',
+    ]);
+    file_put_contents("{$root}/composer.json", '{ this is not valid json');
+
+    $paths = BoostWrapper::injectedEmitPaths($root, ['claude-code']);
+
+    expect($paths)->toBe(['.claude/skills/pest-testing/SKILL.md']);
+});

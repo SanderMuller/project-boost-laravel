@@ -3,6 +3,7 @@
 use SanderMuller\BoostCore\Contracts\SkillRenderer;
 use SanderMuller\BoostCore\Skills\Rendering\RenderContext;
 use SanderMuller\BoostCore\Skills\Skill;
+use SanderMuller\BoostCore\Skills\SkillAsset;
 use SanderMuller\ProjectBoostLaravel\Discovery\LaravelBoostAssetReader;
 use SanderMuller\ProjectBoostLaravel\Discovery\LaravelBoostTagManifest;
 
@@ -230,3 +231,204 @@ test('returns empty list when laravel/boost asset root does not exist', function
     expect($reader->readSkills())
         ->toBeEmpty();
 });
+
+function writeAsset(string $root, string $package, string $skill, string $relativePath, string $content): void
+{
+    $path = "{$root}/{$package}/skill/{$skill}/{$relativePath}";
+    $dir = dirname($path);
+    if (! is_dir($dir)) {
+        mkdir($dir, 0o755, true);
+    }
+
+    file_put_contents($path, $content);
+}
+
+/**
+ * A renderer that strips a leading `@php … @endphp` block, so a test can tell a
+ * rendered asset from a verbatim one.
+ */
+function fakeBladeRenderer(): SkillRenderer
+{
+    return new class implements SkillRenderer {
+        /** @return list<string> */
+        public function extensions(): array
+        {
+            return ['blade.php'];
+        }
+
+        public function render(string $raw, RenderContext $ctx): string
+        {
+            return trim((string) preg_replace('/@php.*?@endphp\s*/s', '', $raw));
+        }
+    };
+}
+
+test('an injected skill carries its plain-file asset siblings verbatim', function (): void {
+    $root = makeFixtureRoot();
+    try {
+        writeSkill($root, 'laravel', 'foo-skill', "---\nname: foo-skill\n---\nsee rules/a.md");
+        writeAsset($root, 'laravel', 'foo-skill', 'rules/a.md', 'rule A');
+        writeAsset($root, 'laravel', 'foo-skill', 'rules/b.md', 'rule B');
+
+        $reader = new LaravelBoostAssetReader($root, new LaravelBoostTagManifest());
+        $skill = $reader->readSkills()[0];
+
+        $paths = array_map(fn (SkillAsset $a): string => $a->relativePath, $skill->assets);
+
+        expect($paths)->toBe(['rules/a.md', 'rules/b.md'])
+            ->and($skill->assets[0]->contents)->toBe('rule A');
+    } finally {
+        rmFixtureRoot($root);
+    }
+});
+
+test('a Blade asset renders and its emit path is rewritten to .md', function (): void {
+    $root = makeFixtureRoot();
+    try {
+        writeSkill($root, 'laravel', 'foo-skill', "---\nname: foo-skill\n---\nsee rules/a.md");
+        writeAsset(
+            $root,
+            'laravel',
+            'foo-skill',
+            'rules/a.blade.php',
+            "@php\n\$pest = true;\n@endphp\nrendered rule A",
+        );
+
+        $reader = new LaravelBoostAssetReader($root, new LaravelBoostTagManifest(), bladeRenderer: fakeBladeRenderer());
+        $skill = $reader->readSkills()[0];
+
+        expect($skill->assets)->toHaveCount(1)
+            ->and($skill->assets[0]->relativePath)->toBe('rules/a.md')
+            ->and($skill->assets[0]->contents)->toBe('rendered rule A');
+    } finally {
+        rmFixtureRoot($root);
+    }
+});
+
+test('a Blade asset is skipped and counted when no renderer is wired', function (): void {
+    $root = makeFixtureRoot();
+    try {
+        writeSkill($root, 'laravel', 'foo-skill', "---\nname: foo-skill\n---\nbody");
+        writeAsset($root, 'laravel', 'foo-skill', 'rules/a.blade.php', 'blade');
+        writeAsset($root, 'laravel', 'foo-skill', 'rules/b.md', 'plain');
+
+        $reader = new LaravelBoostAssetReader($root, new LaravelBoostTagManifest());
+        $skill = $reader->readSkills()[0];
+
+        $paths = array_map(fn (SkillAsset $a): string => $a->relativePath, $skill->assets);
+
+        expect($paths)->toBe(['rules/b.md'])
+            ->and($reader->skippedBladeAssets())->toBe(1);
+    } finally {
+        rmFixtureRoot($root);
+    }
+});
+
+test('a failing Blade asset lands in renderErrors() and emits no partial file, keeping the skill', function (): void {
+    $root = makeFixtureRoot();
+    try {
+        writeSkill($root, 'laravel', 'foo-skill', "---\nname: foo-skill\n---\nbody");
+        writeAsset($root, 'laravel', 'foo-skill', 'rules/a.blade.php', 'blade');
+        writeAsset($root, 'laravel', 'foo-skill', 'rules/b.md', 'plain');
+
+        $throwingRenderer = new class implements SkillRenderer {
+            /** @return list<string> */
+            public function extensions(): array
+            {
+                return ['blade.php'];
+            }
+
+            public function render(string $raw, RenderContext $ctx): string
+            {
+                throw new RuntimeException('asset blade explode');
+            }
+        };
+
+        $reader = new LaravelBoostAssetReader($root, new LaravelBoostTagManifest(), bladeRenderer: $throwingRenderer);
+        $skills = $reader->readSkills();
+
+        expect($skills)->toHaveCount(1)
+            ->and(array_map(fn (SkillAsset $a): string => $a->relativePath, $skills[0]->assets))->toBe(['rules/b.md'])
+            ->and($reader->renderErrors())->toHaveCount(1)
+            ->and($reader->renderErrors()[0])->toContain('asset blade explode');
+    } finally {
+        rmFixtureRoot($root);
+    }
+});
+
+test('entry-file siblings and editor-temp files are never assets', function (): void {
+    $root = makeFixtureRoot();
+    try {
+        writeSkill($root, 'laravel', 'foo-skill', "---\nname: foo-skill\n---\nbody");
+        writeAsset($root, 'laravel', 'foo-skill', 'SKILL.md.license', 'MIT');
+        writeAsset($root, 'laravel', 'foo-skill', 'rules/a.md~', 'stale');
+        writeAsset($root, 'laravel', 'foo-skill', 'rules/a.md.bak', 'stale');
+        writeAsset($root, 'laravel', 'foo-skill', '.hidden', 'nope');
+        writeAsset($root, 'laravel', 'foo-skill', 'rules/a.md', 'rule A');
+
+        $reader = new LaravelBoostAssetReader($root, new LaravelBoostTagManifest());
+        $skill = $reader->readSkills()[0];
+
+        expect(array_map(fn (SkillAsset $a): string => $a->relativePath, $skill->assets))->toBe(['rules/a.md']);
+    } finally {
+        rmFixtureRoot($root);
+    }
+});
+
+test('a skill directory with no siblings reports zero assets', function (): void {
+    $root = makeFixtureRoot();
+    try {
+        writeSkill($root, 'laravel', 'foo-skill', "---\nname: foo-skill\n---\nbody");
+
+        $reader = new LaravelBoostAssetReader($root, new LaravelBoostTagManifest());
+
+        expect($reader->readSkills()[0]->assets)->toBeEmpty();
+    } finally {
+        rmFixtureRoot($root);
+    }
+});
+
+test('two sources claiming one emit path drop the second and report a collision', function (): void {
+    // The `.blade.php` → `.md` rewrite is the only way this happens. Silent
+    // last-write-wins would ship whichever file the walker saw last.
+    $root = makeFixtureRoot();
+    try {
+        writeSkill($root, 'laravel', 'foo-skill', "---\nname: foo-skill\n---\nbody");
+        writeAsset($root, 'laravel', 'foo-skill', 'rules/a.md', 'plain');
+        writeAsset($root, 'laravel', 'foo-skill', 'rules/a.blade.php', 'blade');
+
+        $reader = new LaravelBoostAssetReader($root, new LaravelBoostTagManifest(), bladeRenderer: fakeBladeRenderer());
+        $skill = $reader->readSkills()[0];
+
+        expect($skill->assets)->toHaveCount(1)
+            // sortByName() decides which wins: `a.blade.php` sorts before
+            // `a.md`. Arbitrary but deterministic across OSes.
+            ->and($skill->assets[0]->contents)->toBe('blade')
+            ->and($reader->renderErrors())->toHaveCount(1)
+            ->and($reader->renderErrors()[0])->toContain('collision');
+    } finally {
+        rmFixtureRoot($root);
+    }
+});
+
+test('an unreadable asset is skipped rather than emitted empty over valid content', function (): void {
+    // `(string) file_get_contents()` on a failed read yields '', which the sync
+    // would write over the previous good copy. Skip and report instead.
+    $root = makeFixtureRoot();
+    try {
+        writeSkill($root, 'laravel', 'foo-skill', "---\nname: foo-skill\n---\nbody");
+        writeAsset($root, 'laravel', 'foo-skill', 'rules/a.md', 'rule A');
+        writeAsset($root, 'laravel', 'foo-skill', 'rules/b.md', 'rule B');
+        chmod("{$root}/laravel/skill/foo-skill/rules/a.md", 0o000);
+
+        $reader = new LaravelBoostAssetReader($root, new LaravelBoostTagManifest());
+        $skill = $reader->readSkills()[0];
+
+        expect(array_map(fn (SkillAsset $a): string => $a->relativePath, $skill->assets))->toBe(['rules/b.md'])
+            ->and($reader->renderErrors())->toHaveCount(1)
+            ->and($reader->renderErrors()[0])->toContain('unreadable');
+    } finally {
+        @chmod("{$root}/laravel/skill/foo-skill/rules/a.md", 0o644);
+        rmFixtureRoot($root);
+    }
+})->skip(fn (): bool => posix_geteuid() === 0, 'root bypasses file permissions');

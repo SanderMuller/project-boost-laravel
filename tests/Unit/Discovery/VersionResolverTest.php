@@ -174,3 +174,23 @@ describe('VersionResolver', function (): void {
             ->and($bySkillName['pest-testing']->sourcePath)->toContain('/pest/4/');
     });
 });
+
+test('pickSourcePath selects the same variant resolve() does', function (): void {
+    // BoostWrapper claims emit paths through pickSourcePath while the sync
+    // emits through resolve(). If the two ever disagree, the wrapper protects
+    // one variant's assets while the sync writes another's, and the unclaimed
+    // files get reaped on the next bare-CLI run.
+    $variants = [
+        '/vendor/laravel/boost/.ai/pest/3/skill/pest-testing/SKILL.blade.php',
+        '/vendor/laravel/boost/.ai/pest/4/skill/pest-testing/SKILL.blade.php',
+    ];
+
+    $resolver = new VersionResolver();
+
+    $resolved = $resolver->resolve(array_map(
+        fn (string $path): Skill => makeSkill('pest-testing', $path),
+        $variants,
+    ));
+
+    expect($resolver->pickSourcePath($variants))->toBe($resolved[0]->sourcePath);
+});

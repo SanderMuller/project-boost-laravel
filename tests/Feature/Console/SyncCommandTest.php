@@ -553,3 +553,21 @@ function laravelBoostAiRoot(): string
 {
     return dirname(__DIR__, 3) . '/vendor/laravel/boost/.ai';
 }
+
+it('reports a skill asset problem instead of emitting a skill with dead links', function (): void {
+    // The readers drop a bad asset and record why in `renderErrors()`. If the
+    // command never speaks those out-params, the sync reports success and ships
+    // a SKILL.md whose links go nowhere — indistinguishable from a healthy run.
+    // A colliding pair is the deterministic way to provoke one.
+    $skillDir = base_path('tests-fixture-boost-ai/laravel/skill/foo-skill');
+    File::ensureDirectoryExists($skillDir . '/rules');
+    file_put_contents($skillDir . '/SKILL.md', "---\nname: foo-skill\ndescription: F.\n---\nsee rules/a.md");
+    file_put_contents($skillDir . '/rules/a.md', 'plain');
+    file_put_contents($skillDir . '/rules/a.blade.php', 'blade');
+
+    writeSyncBoostPhp();
+
+    $this->artisan('project-boost:sync')
+        ->expectsOutputToContain('asset collision')
+        ->assertSuccessful();
+});

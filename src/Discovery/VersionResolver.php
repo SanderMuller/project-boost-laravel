@@ -53,46 +53,69 @@ final readonly class VersionResolver
 
         $resolved = [];
         foreach ($byName as $variants) {
-            $resolved[] = count($variants) === 1
-                ? $variants[0]
-                : $this->pickBest($variants);
+            if (count($variants) === 1) {
+                $resolved[] = $variants[0];
+
+                continue;
+            }
+
+            $chosen = $this->pickSourcePath(array_map(
+                static fn (Skill $variant): string => $variant->sourcePath,
+                $variants,
+            ));
+
+            foreach ($variants as $variant) {
+                if ($variant->sourcePath === $chosen) {
+                    $resolved[] = $variant;
+
+                    break;
+                }
+            }
         }
 
         return $resolved;
     }
 
     /**
-     * @param  list<Skill>  $variants
+     * Pick one variant's `SKILL.*` source path out of the several that share a
+     * skill name — the same choice {@see resolve()} makes, reachable without a
+     * `Skill` to wrap it.
+     *
+     * `BoostWrapper` needs exactly this in boost-core's bare-CLI cleanup pass:
+     * it must claim the emit paths of the variant the sync ACTUALLY ships, and
+     * it has only file paths there, no booted app to build skills with.
+     *
+     * @param  list<string>  $sourcePaths
      */
-    private function pickBest(array $variants): Skill
+    public function pickSourcePath(array $sourcePaths): string
     {
-        $hostMajor = $this->lookupHostMajor($variants);
+        $hostMajor = $this->lookupHostMajor($sourcePaths);
         if ($hostMajor !== null) {
-            foreach ($variants as $variant) {
-                if ($this->extractMajor($this->normalize($variant->sourcePath)) === $hostMajor) {
-                    return $variant;
+            foreach ($sourcePaths as $sourcePath) {
+                if ($this->extractMajor($sourcePath) === $hostMajor) {
+                    return $sourcePath;
                 }
             }
         }
 
-        usort($variants, static fn (Skill $a, Skill $b): int => strcmp($a->sourcePath, $b->sourcePath));
+        usort($sourcePaths, strcmp(...));
 
-        /** @var Skill $last */
-        $last = end($variants);
+        /** @var string $last */
+        $last = end($sourcePaths);
 
         return $last;
     }
 
     /**
-     * @param  list<Skill>  $variants
+     * @param  list<string>  $sourcePaths
      */
-    private function lookupHostMajor(array $variants): ?string
+    private function lookupHostMajor(array $sourcePaths): ?string
     {
         if (! $this->scan instanceof ProjectScan) {
             return null;
         }
 
-        $guidelineDir = $this->detectPackageGroup($variants);
+        $guidelineDir = $this->detectPackageGroup($sourcePaths);
         if ($guidelineDir === null) {
             return null;
         }
@@ -128,13 +151,13 @@ final readonly class VersionResolver
      * Returns the shared package directory name if all variants live
      * under the same `<package>/<major>` segment, otherwise null.
      *
-     * @param  list<Skill>  $variants
+     * @param  list<string>  $sourcePaths
      */
-    private function detectPackageGroup(array $variants): ?string
+    private function detectPackageGroup(array $sourcePaths): ?string
     {
         $packages = [];
-        foreach ($variants as $variant) {
-            if (preg_match('#/\.ai/([^/]+)/\d+/skill/#', $this->normalize($variant->sourcePath), $matches) === 1) {
+        foreach ($sourcePaths as $sourcePath) {
+            if (preg_match('#/\.ai/([^/]+)/\d+/skill/#', $this->normalize($sourcePath), $matches) === 1) {
                 $packages[$matches[1]] = true;
             }
         }
