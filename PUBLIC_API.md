@@ -44,10 +44,11 @@ Human-readable output text is NOT a contract.
 ### Behavior + mechanism
 
 - `project-boost:sync` reads laravel/boost's skills/guidelines from `vendor/laravel/boost/.ai/<pkg>/[<major>/]{skill,guideline}/…`, Blade-renders `.blade.php`, applies your `withTags()` filter, and injects them into boost-core via the **wrapper-injection** path (`BoostSync::sync(injectedVendorSkills:, injectedVendorGuidelines:)`) under the vendor key `laravel/boost`. It does **not** declare `extra.boost.*` skill/guideline paths and ships no skill set of its own.
+- An injected skill ships with the companion files laravel/boost stores beside its `SKILL.*` entry (`rules/`, `references/`, …), so the routing tables in the emitted `SKILL.md` resolve. A `.blade.php` companion is rendered and emitted as `.md`, under the same relative path.
 
 ## Internal (not covered by semver)
 
-Every class is `@internal` and may change in any release — do not import or extend: the three console command classes, `BoostWrapper`, the service provider, `Rendering\BladeRenderer`, `Discovery\*` (`LaravelBoostAssetReader`, `LaravelBoostGuidelineReader`, `LaravelBoostGuidelineGate`, `LaravelBoostTagManifest`, `VersionResolver`), `Listeners\EnforceMcpFlagOnBoostInstall`, and `Console\Concerns\LoadsBoostConfig`. A pest-arch test asserts every `src/` class is marked `@api` or `@internal` so the boundary can't erode.
+Every class is `@internal` and may change in any release — do not import or extend: the three console command classes, `BoostWrapper`, the service provider, `Rendering\BladeRenderer`, `Discovery\*` (`LaravelBoostAssetReader`, `LaravelBoostGuidelineReader`, `LaravelBoostGuidelineGate`, `LaravelBoostTagManifest`, `SkillAssetScope`, `VersionResolver`), `Listeners\EnforceMcpFlagOnBoostInstall`, and `Console\Concerns\LoadsBoostConfig`. A pest-arch test asserts every `src/` class is marked `@api` or `@internal` so the boundary can't erode.
 
 ## Stability policy
 
