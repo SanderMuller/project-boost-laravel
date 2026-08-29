@@ -36,6 +36,7 @@ Human-readable output text is NOT a contract.
 
 - The service provider FQCN `SanderMuller\ProjectBoostLaravel\ProjectBoostLaravelServiceProvider` (registered via `extra.laravel.providers`) — pinned for package discovery; not consumer-instantiated.
 - The wrapper class name/namespace `SanderMuller\ProjectBoostLaravel\BoostWrapper` implementing boost-core's `@api` `BoostWrapperContract` — boost-core discovers it by name (guarded by a reflection test). `@internal`, but its identity is pinned.
+- `composer.json`'s `extra.boost.entry-point` map (added in 1.4) — the commands a bare `vendor/bin/boost` should redirect to this package's artisan equivalents: `sync`, `where`, `install`. boost-core reads it as JSON, so it applies even when this package's own CLI cannot boot. The keys and their invocation strings are part of the surface.
 
 ### Tag sidecar manifest
 
@@ -48,7 +49,7 @@ Human-readable output text is NOT a contract.
 
 ## Internal (not covered by semver)
 
-Every class is `@internal` and may change in any release — do not import or extend: the three console command classes, `BoostWrapper`, the service provider, `Rendering\BladeRenderer`, `Discovery\*` (`LaravelBoostAssetReader`, `LaravelBoostGuidelineReader`, `LaravelBoostGuidelineGate`, `LaravelBoostTagManifest`, `SkillAssetScope`, `VersionResolver`), `Listeners\EnforceMcpFlagOnBoostInstall`, and `Console\Concerns\LoadsBoostConfig`. A pest-arch test asserts every `src/` class is marked `@api` or `@internal` so the boundary can't erode.
+Every class is `@internal` and may change in any release — do not import or extend: the three console command classes, `BoostWrapper`, the service provider, `Rendering\BladeRenderer`, `Discovery\*` (`LaravelBoostAssetReader`, `LaravelBoostGuidelineReader`, `LaravelBoostGuidelineGate`, `LaravelBoostTagManifest`, `SkillAssetScope`, `VersionResolver`), `Rendering\InjectedSkillStatus`, `Listeners\EnforceMcpFlagOnBoostInstall`, and `Console\Concerns\LoadsBoostConfig`. A pest-arch test asserts every `src/` class is marked `@api` or `@internal` so the boundary can't erode.
 
 ## Stability policy
 
