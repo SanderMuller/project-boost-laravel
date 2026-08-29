@@ -22,7 +22,7 @@
         "illuminate/support": "^12.0||^13.0",
         "laravel/boost": "^2.5",
         "laravel/roster": "^1.0",
-        "sandermuller/boost-core": "^1.6"
+        "sandermuller/boost-core": "^1.8.1"
     },
     "require-dev": {
         "driftingly/rector-laravel": "^2.5",
@@ -98,6 +98,13 @@
         ]
     },
     "extra": {
+        "boost": {
+            "entry-point": {
+                "sync": "php artisan project-boost:sync",
+                "where": "php artisan project-boost:where",
+                "install": "php artisan project-boost:install"
+            }
+        },
         "laravel": {
             "providers": [
                 "SanderMuller\\ProjectBoostLaravel\\ProjectBoostLaravelServiceProvider"

@@ -8,7 +8,7 @@ use SanderMuller\BoostCore\Config\BoostConfig;
 use SanderMuller\BoostCore\Skills\Guideline;
 use SanderMuller\BoostCore\Skills\Skill;
 use SanderMuller\BoostCore\Sync\BoostSync;
-use SanderMuller\BoostCore\Sync\EmitterAction;
+use SanderMuller\BoostCore\Sync\SyncReporter;
 use SanderMuller\BoostCore\Sync\SyncResult;
 use SanderMuller\BoostCore\Sync\WriteAction;
 use SanderMuller\ProjectBoostLaravel\Coexistence\BoostJsonOutcome;
@@ -378,121 +378,65 @@ final class SyncCommand extends Command
         );
     }
 
+    /**
+     * Render through boost-core's `SyncReporter` so this command and
+     * `vendor/bin/boost sync` describe one `SyncResult` identically — two
+     * entry points wording the same run differently is the divergence this
+     * package exists to prevent.
+     *
+     * The EXIT decision stays ours, but only for DRIFT. `PUBLIC_API.md`
+     * documents `0` for a `--dry-run` with pending changes, so `render()` (not
+     * `report()`) is the call and `driftIsFailure: false` keeps the wording
+     * neutral to match. Every other finding is a real failure: a conventions
+     * schema error or a leaked `boost:conv` token makes the reporter print a
+     * fatal error, and returning SUCCESS under it would contradict what the
+     * operator just read and let CI accept invalid emitted output.
+     *
+     * The per-file list is printed here only for a REAL sync: boost-core's
+     * report carries no write list of its own, but its drift branch does, so
+     * printing ours in check mode listed every planned path twice.
+     */
     private function renderResult(SyncResult $result, bool $checkOnly): int
     {
-        foreach ($result->writes as $written) {
-            $this->line("  <fg=green>{$written->action->value}</> {$written->relativePath}");
+        if (! $checkOnly) {
+            foreach ($result->writes as $written) {
+                $this->line("  <fg=green>{$written->action->value}</> {$written->relativePath}");
+            }
         }
+
+        // Emitters are ours in both modes — the reporter's drift list covers
+        // writes only, so these are never duplicated.
 
         foreach ($result->emitters as $emitter) {
             $path = $emitter->relativePath ?? $emitter->fqcn;
             $this->line("  <fg=cyan>emitter:{$emitter->action->value}</> {$path}");
         }
 
-        // Surface boost-core's canonical delete-attribution warning. Helper
-        // returns null when nothing was deleted or in check-mode (which lists
-        // would-delete inline already), so the call is unconditional.
-        $attribution = $result->renderDeleteAttribution();
-        if ($attribution !== null) {
-            $this->newLine();
-            $this->warn($attribution);
-        }
+        $outcome = (new SyncReporter($this->commandInvocations(), driftIsFailure: false))
+            ->render($this->output, $result, $checkOnly, base_path());
 
-        $this->renderDiagnostics($result);
+        $fatal = $outcome->hasErrors || $outcome->hasConventionsError || $outcome->hasTokenLeak;
 
-        if ($result->hasErrors()) {
-            $this->newLine();
-            $this->error($checkOnly ? 'Errors during dry-run:' : 'Errors during sync:');
-            foreach ($result->errors as $err) {
-                $this->line("  - {$err}");
-            }
-
-            foreach ($result->emitters as $emitter) {
-                if ($emitter->action !== EmitterAction::ERRORED) {
-                    continue;
-                }
-
-                $this->line(sprintf('  - emitter %s (%s): %s', $emitter->fqcn, $emitter->vendor, $emitter->reason ?? 'no reason given'));
-            }
-
-            return self::FAILURE;
-        }
-
-        $this->newLine();
-        $this->line($this->renderSummary($result, $checkOnly));
-
-        return self::SUCCESS;
+        return $fatal ? self::FAILURE : self::SUCCESS;
     }
 
     /**
-     * rsync-style breakdown — "N writes" by itself counted every event
-     * (unchanged, skipped-symlink, would-*) which mislabelled idempotent
-     * runs as having written N files. Split per action so the headline
-     * count matches what actually changed on disk. Emitter counts are
-     * surfaced separately because `SyncResult::writes` excludes them.
+     * Where the report's follow-up advice should send an operator. Unmapped
+     * names fall back to `vendor/bin/boost <name>`, which in a wrapper project
+     * is the entry point that reports a materially thinner set — so `tags`
+     * maps to `project-boost:where`, this package's nearest equivalent, rather
+     * than being left to that fallback. The equivalent need not be a command of
+     * the same name; it only has to be the right thing to run.
+     *
+     * @return array<string, string>
      */
-    private function renderSummary(SyncResult $result, bool $checkOnly): string
+    private function commandInvocations(): array
     {
-        $emitterWrote = $result->countEmittersByAction($checkOnly ? EmitterAction::WOULD_WRITE : EmitterAction::WROTE);
-        $emitterSuffix = $result->emitters === []
-            ? ''
-            : sprintf(' · emitters(%s=%d, unchanged=%d, skipped=%d)',
-                $checkOnly ? 'would-write' : 'wrote',
-                $emitterWrote,
-                $result->countEmittersByAction(EmitterAction::UNCHANGED),
-                $result->countEmittersByAction(EmitterAction::SKIPPED) + $result->countEmittersByAction(EmitterAction::DISABLED),
-            );
-
-        if ($checkOnly) {
-            return sprintf(
-                '<fg=gray>Plan · would-write=%d · would-delete=%d · unchanged=%d · skipped-symlink=%d (%d skill/guideline events)%s</>',
-                $result->countByAction(WriteAction::WOULD_WRITE),
-                $result->countByAction(WriteAction::WOULD_DELETE),
-                $result->countByAction(WriteAction::UNCHANGED),
-                $result->countByAction(WriteAction::SKIPPED_SYMLINK),
-                count($result->writes),
-                $emitterSuffix,
-            );
-        }
-
-        return sprintf(
-            '<fg=gray>Sync complete · wrote=%d · deleted=%d · unchanged=%d · skipped-symlink=%d (%d skill/guideline events)%s</>',
-            $result->countByAction(WriteAction::WROTE),
-            $result->countByAction(WriteAction::DELETED),
-            $result->countByAction(WriteAction::UNCHANGED),
-            $result->countByAction(WriteAction::SKIPPED_SYMLINK),
-            count($result->writes),
-            $emitterSuffix,
-        );
-    }
-
-    /**
-     * Mirror boost-core SyncCommand's `renderConventionsDiagnostics()` so
-     * artisan-wrapped sync output surfaces the same warning/info channel
-     * for parseable-divergence + schema diagnostics. Without this, operators
-     * see the re-render happen (`wrote CLAUDE.md`) but no explanation —
-     * the engine emits to `SyncResult::diagnostics`, which `renderResult()`
-     * silently dropped before 0.3.5.
-     */
-    private function renderDiagnostics(SyncResult $result): void
-    {
-        if ($result->diagnostics === []) {
-            return;
-        }
-
-        $this->newLine();
-        $this->line('<fg=cyan>Diagnostics</>');
-        foreach ($result->diagnostics as $diagnostic) {
-            $glyph = match ($diagnostic->level) {
-                'error' => '<fg=red>✗</>',
-                'warning' => '<fg=yellow>⚠</>',
-                'info' => '<fg=cyan>ℹ</>',
-                default => ' ',
-            };
-            $slot = $diagnostic->slot === null ? '' : "{$diagnostic->slot}: ";
-            $vendor = $diagnostic->vendor === null ? '' : " ({$diagnostic->vendor})";
-            $this->line("  {$glyph} {$slot}{$diagnostic->message}{$vendor}");
-        }
+        return [
+            'sync' => 'php artisan project-boost:sync',
+            'tags' => 'php artisan project-boost:where',
+            'where' => 'php artisan project-boost:where',
+        ];
     }
 
     /**

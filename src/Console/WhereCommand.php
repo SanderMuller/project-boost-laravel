@@ -8,8 +8,7 @@ use SanderMuller\BoostCore\Config\BoostConfig;
 use SanderMuller\BoostCore\Skills\Guideline;
 use SanderMuller\BoostCore\Skills\Skill;
 use SanderMuller\BoostCore\Sync\BoostSync;
-use SanderMuller\BoostCore\Sync\SyncResult;
-use SanderMuller\BoostCore\Sync\WriteAction;
+use SanderMuller\BoostCore\Sync\SyncReporter;
 use SanderMuller\ProjectBoostLaravel\Console\Concerns\GatesGuidelines;
 use SanderMuller\ProjectBoostLaravel\Console\Concerns\LoadsBoostConfig;
 use SanderMuller\ProjectBoostLaravel\Console\Concerns\ResolvesAiRoot;
@@ -18,6 +17,7 @@ use SanderMuller\ProjectBoostLaravel\Discovery\LaravelBoostGuidelineReader;
 use SanderMuller\ProjectBoostLaravel\Discovery\LaravelBoostTagManifest;
 use SanderMuller\ProjectBoostLaravel\Discovery\VersionResolver;
 use SanderMuller\ProjectBoostLaravel\Rendering\BladeRenderer;
+use SanderMuller\ProjectBoostLaravel\Rendering\InjectedSkillStatus;
 
 /**
  * `project-boost:where` — list every laravel/boost-bundled skill +
@@ -96,13 +96,35 @@ final class WhereCommand extends Command
             injectedVendorGuidelines: ['laravel/boost' => $guidelines],
         );
 
-        $shippedNames = $this->shippedSkillNamesFromResult($result);
-        $shadowedBy = $this->shadowIndex($result);
+        // boost-core owns the inverse of `AgentTarget::skillRelativePathForName()`.
+        // Deriving shipped/shadowed here meant pattern-matching an emit path,
+        // which is coupled to a layout no promise covers — the frozen contract
+        // is `skillsDirectoryRelative()`, not the fact that its value ends in
+        // `/skills`. A layout change inside that promise matched nothing, and
+        // the status column silently reported every skill as not shipping.
+        $status = InjectedSkillStatus::from($result);
 
-        $this->renderSkillsTable($skills, $shippedNames, $shadowedBy);
+        // A skill whose source fails to render is EXCLUDED from the resolved
+        // set rather than reported, so it never reaches `$result->writes` and
+        // the status column would blame the tag filter for a renderer failure —
+        // sending the operator to fix a `withTags()` that was never the cause.
+        // On a degraded run the negative statuses are not attributable, so say
+        // the errors and withhold the reason instead of inventing one.
+        if ($status->isDegraded()) {
+            // Delegate to boost-core's renderer rather than listing the errors
+            // here. It covers BOTH channels — an ERRORED emitter does not
+            // appear in `$result->errors` — and a hand-rolled second copy is
+            // exactly what reintroduced that gap in `boost doctor`.
+            (new SyncReporter())->renderErrors($this->output, $result, checkOnly: true);
+
+            $this->newLine();
+            $this->warn('Statuses below are incomplete: a skill that failed to render is reported as not shipping, without a reason.');
+        }
+
+        $this->renderSkillsTable($skills, $status);
         $this->renderGuidelinesTable($guidelines);
 
-        $shippedCount = count(array_intersect(array_map(static fn (Skill $s): string => $s->name, $skills), $shippedNames));
+        $shippedCount = count(array_filter($skills, static fn (Skill $s): bool => $status->isShipped($s->name)));
         $filteredCount = count($skills) - $shippedCount;
 
         $this->newLine();
@@ -114,7 +136,11 @@ final class WhereCommand extends Command
             count($guidelines),
         ));
 
-        $this->line('<fg=gray>For host / scanned-vendor / remote-skill origins, run `vendor/bin/boost where`.</>');
+        // `vendor/bin/boost where` is the only view of those origins — this
+        // package has no equivalent — but it renders the BARE pipeline, with
+        // none of the laravel/boost skills listed above. Naming that keeps the
+        // pointer useful without implying the two listings are comparable.
+        $this->line('<fg=gray>Host / scanned-vendor / remote-skill origins are listed only by `vendor/bin/boost where`, which shows the bare pipeline — none of the injected skills above appear there.</>');
 
         return self::SUCCESS;
     }
@@ -134,62 +160,13 @@ final class WhereCommand extends Command
     }
 
     /**
-     * Collect the skill names from a check-mode SyncResult that would
-     * actually land in agent dirs. Anything in the injection set but
-     * not in the would-write paths is either tag-filtered, host-shadowed,
-     * or collision-lost — disambiguated via `$result->hostShadows` in
-     * the renderer.
-     *
-     * @return list<string>
-     */
-    private function shippedSkillNamesFromResult(SyncResult $result): array
-    {
-        $names = [];
-        foreach ($result->writes as $written) {
-            if ($written->action !== WriteAction::WOULD_WRITE && $written->action !== WriteAction::UNCHANGED) {
-                continue;
-            }
-
-            if (preg_match('#/skills/([^/]+)/SKILL\.md$#', $written->relativePath, $matches) !== 1) {
-                continue;
-            }
-
-            $names[$matches[1]] = true;
-        }
-
-        return array_keys($names);
-    }
-
-    /**
-     * Map of skill name → shadowing vendor, built from boost-core's
-     * `$result->hostShadows` (list of `{skill, shadowedVendor}` entries).
-     * Lets the status column attribute a non-shipping skill to a host
-     * override rather than mislabel it as `filtered (declare: …)`.
-     *
-     * @return array<string, string>
-     */
-    private function shadowIndex(SyncResult $result): array
-    {
-        $index = [];
-        foreach ($result->hostShadows as $shadow) {
-            $index[$shadow['skill']] = $shadow['shadowedVendor'];
-        }
-
-        return $index;
-    }
-
-    /**
      * @param  list<Skill>  $skills
-     * @param  list<string>  $shippedNames
-     * @param  array<string, string>  $shadowedBy
      */
-    private function renderSkillsTable(array $skills, array $shippedNames, array $shadowedBy): void
+    private function renderSkillsTable(array $skills, InjectedSkillStatus $status): void
     {
         if ($skills === []) {
             return;
         }
-
-        $shipped = array_fill_keys($shippedNames, true);
 
         $this->newLine();
         $this->line('<fg=cyan>laravel/boost-injected skills</>');
@@ -198,41 +175,10 @@ final class WhereCommand extends Command
         foreach ($skills as $skill) {
             $type = str_ends_with($skill->sourcePath, '.blade.php') ? 'blade' : 'md';
             $tags = $skill->tags === [] ? '<untagged>' : implode(' ', $skill->tags);
-            $status = $this->renderStatus($skill, $shipped, $shadowedBy, $tags);
-            $rows[] = [$skill->name, $type, $tags, $status];
+            $rows[] = [$skill->name, $type, $tags, $status->cellFor($skill, $tags)];
         }
 
         $this->table(['Skill', 'Type', 'Tags', 'Status'], $rows);
-    }
-
-    /**
-     * Three-way attribution for a skill's status:
-     *   ship                          — the skill survived the pipeline
-     *   shadowed by <vendor>          — lost to a host/scanned skill of the same name
-     *   filtered (declare: <tags>)    — tag-filter excluded it; user can add tags
-     *   excluded                      — not shipping for some other reason
-     *                                   (untagged skill that still didn't land —
-     *                                   usually `withExcludedSkills` or a renderer
-     *                                   issue; tag advice wouldn't help)
-     *
-     * @param  array<string, true>  $shipped
-     * @param  array<string, string>  $shadowedBy
-     */
-    private function renderStatus(Skill $skill, array $shipped, array $shadowedBy, string $tagsLabel): string
-    {
-        if (isset($shipped[$skill->name])) {
-            return '<fg=green>ship</>';
-        }
-
-        if (isset($shadowedBy[$skill->name])) {
-            return sprintf('<fg=yellow>shadowed by %s</>', $shadowedBy[$skill->name]);
-        }
-
-        if ($skill->tags === []) {
-            return '<fg=yellow>excluded</>';
-        }
-
-        return '<fg=yellow>filtered (declare: ' . $tagsLabel . ')</>';
     }
 
     /**
