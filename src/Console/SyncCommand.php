@@ -11,6 +11,7 @@ use SanderMuller\BoostCore\Sync\BoostSync;
 use SanderMuller\BoostCore\Sync\SyncReporter;
 use SanderMuller\BoostCore\Sync\SyncResult;
 use SanderMuller\BoostCore\Sync\WriteAction;
+use SanderMuller\BoostCore\Sync\WrittenFile;
 use SanderMuller\ProjectBoostLaravel\Coexistence\BoostJsonOutcome;
 use SanderMuller\ProjectBoostLaravel\Coexistence\BoostJsonRemoval;
 use SanderMuller\ProjectBoostLaravel\Coexistence\BoostJsonRemover;
@@ -399,9 +400,7 @@ final class SyncCommand extends Command
     private function renderResult(SyncResult $result, bool $checkOnly): int
     {
         if (! $checkOnly) {
-            foreach ($result->writes as $written) {
-                $this->line("  <fg=green>{$written->action->value}</> {$written->relativePath}");
-            }
+            $this->renderWrites($result->writes);
         }
 
         // Emitters are ours in both modes — the reporter's drift list covers
@@ -418,6 +417,71 @@ final class SyncCommand extends Command
         $fatal = $outcome->hasErrors || $outcome->hasConventionsError || $outcome->hasTokenLeak;
 
         return $fatal ? self::FAILURE : self::SUCCESS;
+    }
+
+    /**
+     * The per-file write list, with the `unchanged` paths collapsed.
+     *
+     * A full sync touches several hundred files and almost all of them are
+     * unchanged, so the individual lines bury the handful of `wrote` paths the
+     * operator actually needs to see. Every other action stays one line per
+     * path, in write order; the unchanged paths become one counted line per
+     * directory, printed after them.
+     *
+     * The count is over DISTINCT paths, and a path that got its own line under
+     * any other action is left out of it. Two agent targets can emit into one
+     * directory — `.agents/skills/` is written twice on a Claude + generic
+     * setup — so one path can appear twice in `$writes`: counting entries would
+     * report double the files that exist there, and a path written by the first
+     * target and unchanged for the second would be both listed as written and
+     * counted as unchanged in the same output.
+     *
+     * @param  list<WrittenFile>  $writes
+     */
+    private function renderWrites(array $writes): void
+    {
+        /** @var array<string, array<string, true>> $unchanged */
+        $unchanged = [];
+        /** @var array<string, true> $listed */
+        $listed = [];
+
+        foreach ($writes as $written) {
+            if ($written->action !== WriteAction::UNCHANGED) {
+                $this->line("  <fg=green>{$written->action->value}</> {$written->relativePath}");
+                $listed[$written->relativePath] = true;
+
+                continue;
+            }
+
+            $unchanged[$this->writeGroup($written->relativePath)][$written->relativePath] = true;
+        }
+
+        foreach ($unchanged as $group => $paths) {
+            $paths = array_diff_key($paths, $listed);
+
+            if ($paths === []) {
+                continue;
+            }
+
+            $this->line(sprintf('  <fg=green>unchanged</> %d file(s) in %s', count($paths), $group));
+        }
+    }
+
+    /**
+     * The label an unchanged path is counted under: the first two path segments
+     * (`.claude/skills`), the first one when the path is shallower, or a name
+     * for the project root when the file sits there (`CLAUDE.md` is emitted at
+     * the root, and its own filename would read as a directory).
+     */
+    private function writeGroup(string $relativePath): string
+    {
+        $segments = explode('/', $relativePath);
+
+        return match (true) {
+            count($segments) === 1 => 'the project root',
+            count($segments) === 2 => $segments[0],
+            default => $segments[0] . '/' . $segments[1],
+        };
     }
 
     /**
