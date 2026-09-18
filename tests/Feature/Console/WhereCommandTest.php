@@ -87,3 +87,22 @@ it('install-gates guidelines like sync — does not list guidelines for packages
         ->and($output)->not->toContain('inertia-laravel-core')
         ->and($output)->not->toContain('livewire-core');
 });
+
+it("points at the bare CLI as the bare pipeline, not as this command's equivalent", function (): void {
+    // `vendor/bin/boost where` is the only listing of host / scanned-vendor /
+    // remote origins, but it renders the BARE pipeline — none of the injected
+    // skills. The old copy read as a plain "run this instead", which sends a
+    // wrapper user to the entry point that reports a materially thinner set.
+    file_put_contents(base_path('boost.php'), <<<'PHP'
+        <?php declare(strict_types=1);
+
+        use SanderMuller\BoostCore\Config\BoostConfig;
+        use SanderMuller\BoostCore\Enums\Agent;
+
+        return BoostConfig::configure()->withAgents([Agent::CLAUDE_CODE]);
+        PHP);
+
+    Artisan::call('project-boost:where');
+
+    expect(Artisan::output())->toContain('shows the bare pipeline');
+});

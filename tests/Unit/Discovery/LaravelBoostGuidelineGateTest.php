@@ -1,27 +1,8 @@
 <?php declare(strict_types=1);
 
-use Laravel\Roster\Enums\Packages;
-use Laravel\Roster\Package;
-use Laravel\Roster\Roster;
+use Laravel\Boost\Install\Concerns\DiscoverPackagePaths;
+use Laravel\Boost\Support\PackageRegistry;
 use SanderMuller\ProjectBoostLaravel\Discovery\LaravelBoostGuidelineGate;
-
-/**
- * Build a Roster with the given packages. Each entry is
- * [Packages enum, direct, optional version (default 1.0.0)].
- *
- * @param  list<array{0: Packages, 1: bool, 2?: string}>  $packages
- */
-function gateRoster(array $packages): Roster
-{
-    $roster = new Roster();
-    foreach ($packages as $entry) {
-        [$enum, $direct] = $entry;
-        $version = $entry[2] ?? '1.0.0';
-        $roster->add((new Package($enum, $enum->value, $version))->setDirect($direct));
-    }
-
-    return $roster;
-}
 
 /**
  * Create a fixture `.ai/` root containing the given package dirs (each with a
@@ -92,9 +73,21 @@ test('permissive gate allows everything', function (): void {
         ->and($gate->allows('anything-at-all'))->toBeTrue();
 });
 
+test('exclusion and must-be-direct lists still match laravel/boost', function (): void {
+    // This gate is a 1:1 mirror of DiscoverPackagePaths. Nothing else notices
+    // when boost changes the policy underneath us — and unlike the class/enum
+    // removal that forced the roster 1.0 rewrite, a changed array drifts
+    // silently: no fatal, just guidelines quietly emitted or suppressed.
+    $boost = (new ReflectionClass(DiscoverPackagePaths::class))->getDefaultProperties();
+    $gate = (new ReflectionClass(LaravelBoostGuidelineGate::class))->getConstants();
+
+    expect($gate['EXCLUDED_PACKAGES'])->toBe($boost['excludedPackages'])
+        ->and($gate['MUST_BE_DIRECT'])->toBe($boost['mustBeDirect']);
+});
+
 test('core segments are always allowed regardless of roster', function (): void {
     $root = gateAiRoot([]);
-    $gate = LaravelBoostGuidelineGate::fromRoster(gateRoster([]), $root);
+    $gate = LaravelBoostGuidelineGate::fromProjectScan(scanWithPackages([]), $root);
 
     expect($gate->allows('foundation'))->toBeTrue()
         ->and($gate->allows('php'))->toBeTrue()
@@ -104,8 +97,8 @@ test('core segments are always allowed regardless of roster', function (): void 
 
 test('denies a package dir the host has not installed', function (): void {
     $root = gateAiRoot(['phpunit', 'inertia-laravel']);
-    $gate = LaravelBoostGuidelineGate::fromRoster(
-        gateRoster([[Packages::PHPUNIT, true]]),
+    $gate = LaravelBoostGuidelineGate::fromProjectScan(
+        scanWithPackages([[PackageRegistry::PHPUNIT, true]]),
         $root,
     );
 
@@ -115,8 +108,8 @@ test('denies a package dir the host has not installed', function (): void {
 
 test('PEST shadows PHPUNIT when both installed (priority exclusion)', function (): void {
     $root = gateAiRoot(['pest', 'phpunit']);
-    $gate = LaravelBoostGuidelineGate::fromRoster(
-        gateRoster([[Packages::PEST, true], [Packages::PHPUNIT, true]]),
+    $gate = LaravelBoostGuidelineGate::fromProjectScan(
+        scanWithPackages([[PackageRegistry::PEST, true], [PackageRegistry::PHPUNIT, true]]),
         $root,
     );
 
@@ -126,8 +119,8 @@ test('PEST shadows PHPUNIT when both installed (priority exclusion)', function (
 
 test('FLUXUI_PRO shadows FLUXUI_FREE when both installed', function (): void {
     $root = gateAiRoot(['fluxui-pro', 'fluxui-free']);
-    $gate = LaravelBoostGuidelineGate::fromRoster(
-        gateRoster([[Packages::FLUXUI_PRO, true], [Packages::FLUXUI_FREE, true]]),
+    $gate = LaravelBoostGuidelineGate::fromProjectScan(
+        scanWithPackages([[PackageRegistry::FLUXUI_PRO, true], [PackageRegistry::FLUXUI_FREE, true]]),
         $root,
     );
 
@@ -137,8 +130,8 @@ test('FLUXUI_PRO shadows FLUXUI_FREE when both installed', function (): void {
 
 test('SAIL is excluded from package discovery even when installed', function (): void {
     $root = gateAiRoot(['sail']);
-    $gate = LaravelBoostGuidelineGate::fromRoster(
-        gateRoster([[Packages::SAIL, true]]),
+    $gate = LaravelBoostGuidelineGate::fromProjectScan(
+        scanWithPackages([[PackageRegistry::SAIL, true]]),
         $root,
     );
 
@@ -148,12 +141,12 @@ test('SAIL is excluded from package discovery even when installed', function ():
 test('LIVEWIRE counts only as a direct requirement', function (): void {
     $root = gateAiRoot(['livewire']);
 
-    $indirect = LaravelBoostGuidelineGate::fromRoster(
-        gateRoster([[Packages::LIVEWIRE, false]]),
+    $indirect = LaravelBoostGuidelineGate::fromProjectScan(
+        scanWithPackages([[PackageRegistry::LIVEWIRE, false]]),
         $root,
     );
-    $direct = LaravelBoostGuidelineGate::fromRoster(
-        gateRoster([[Packages::LIVEWIRE, true]]),
+    $direct = LaravelBoostGuidelineGate::fromProjectScan(
+        scanWithPackages([[PackageRegistry::LIVEWIRE, true]]),
         $root,
     );
 
@@ -168,31 +161,81 @@ test('passes non-composer-package segments like herd (no false guidance loss)', 
     // no withExcludedGuidelines add-back lever, so the gate must pass it.
     // (collectiq regression report against 0.4.0.)
     $root = gateAiRoot(['herd', 'inertia-laravel']);
-    $gate = LaravelBoostGuidelineGate::fromRoster(gateRoster([]), $root);
+    $gate = LaravelBoostGuidelineGate::fromProjectScan(scanWithPackages([]), $root);
 
     expect($gate->allows('herd'))->toBeTrue()
         ->and($gate->allows('enforce-tests'))->toBeTrue()
         ->and($gate->allows('inertia-laravel'))->toBeFalse();
 });
 
-test('a package whose dir is absent from .ai is not allowed', function (): void {
-    // Pennant installed but the fixture ships no pennant dir.
+test('a package whose dir is absent from .ai composes no version fragment', function (): void {
+    // Pennant installed but the fixture ships no pennant dir, so it never
+    // enters $allowedPackageDirs and gets no entry in $hostMajors — no
+    // `pennant/<major>/…` fragment can match.
+    //
+    // The top-level `pennant` segment passes through rather than being denied:
+    // the known-package universe is derived from the dirs laravel/boost ships,
+    // and a dir that doesn't exist can't be walked by the reader in the first
+    // place, so the question is unreachable in production. Denying it would
+    // mean guessing about a segment we have no guideline file for.
     $root = gateAiRoot(['phpunit']);
-    $gate = LaravelBoostGuidelineGate::fromRoster(
-        gateRoster([[Packages::PENNANT, true], [Packages::PHPUNIT, true]]),
+    $gate = LaravelBoostGuidelineGate::fromProjectScan(
+        scanWithPackages([['laravel/pennant', true], [PackageRegistry::PHPUNIT, true]]),
         $root,
     );
 
-    expect($gate->allows('pennant'))->toBeFalse()
+    expect($gate->allows('pennant', '1'))->toBeFalse()
         ->and($gate->allows('phpunit'))->toBeTrue();
+});
+
+test('gates a js-ecosystem package dir on the npm side of the scan', function (): void {
+    // `.ai/` carries npm-package guideline dirs too (inertia-*, tailwindcss),
+    // and boost's own discovery concats php + js. Scanning only php would
+    // silently drop every one of them.
+    $root = gateAiRoot(['inertia-vue', 'inertia-react']);
+    $gate = LaravelBoostGuidelineGate::fromProjectScan(
+        scanWithPackages([], [['@inertiajs/vue3', true, '2.1.0']]),
+        $root,
+    );
+
+    expect($gate->allows('inertia-vue'))->toBeTrue()
+        ->and($gate->allows('inertia-vue', '2'))->toBeTrue()
+        ->and($gate->allows('inertia-react'))->toBeFalse();
+});
+
+test('a package Roster resolved without a version composes no version fragment', function (): void {
+    // Package::major() is null for an empty version. The dir still emits its
+    // top-level core guideline — we know the package is there — but no
+    // `<pkg>/<major>/…` fragment can be claimed for a major we don't know.
+    $root = gateAiRoot(['laravel']);
+    $gate = LaravelBoostGuidelineGate::fromProjectScan(
+        scanWithPackages([[PackageRegistry::LARAVEL, true, '']]),
+        $root,
+    );
+
+    expect($gate->allows('laravel'))->toBeTrue()
+        ->and($gate->allows('laravel', '12'))->toBeFalse()
+        ->and($gate->allows('laravel', ''))->toBeFalse();
+});
+
+test('an unreadable .ai root yields an empty universe, so nothing is denied', function (): void {
+    // Never-lossy fallback: with no dirs to enumerate the gate has no basis to
+    // call any segment a known-but-uninstalled package.
+    $gate = LaravelBoostGuidelineGate::fromProjectScan(
+        scanWithPackages([]),
+        sys_get_temp_dir() . '/project-boost-laravel-absent-' . bin2hex(random_bytes(8)),
+    );
+
+    expect($gate->allows('phpunit'))->toBeTrue()
+        ->and($gate->allows('foundation'))->toBeTrue();
 });
 
 test('scopes package version-major fragments to the host installed major', function (): void {
     // laravel/boost composes only `<dir>/{majorVersion}` for a package guideline
     // dir, so laravel/12 emits on a Laravel 12 host while laravel/11 is dropped.
     $root = gateAiRoot(['laravel']);
-    $gate = LaravelBoostGuidelineGate::fromRoster(
-        gateRoster([[Packages::LARAVEL, true, '12.0.0']]),
+    $gate = LaravelBoostGuidelineGate::fromProjectScan(
+        scanWithPackages([[PackageRegistry::LARAVEL, true, '12.0.0']]),
         $root,
     );
 
@@ -205,7 +248,7 @@ test('scopes php version dirs cumulative-downward to the declared floor', functi
     // php/8.x is cumulative (8.4 features usable on 8.5), so keep every
     // php/<v> with v <= floor; drop versions above the supported range.
     $root = gateAiRoot([]);
-    $gate = LaravelBoostGuidelineGate::fromRoster(gateRoster([]), $root, '8.5');
+    $gate = LaravelBoostGuidelineGate::fromProjectScan(scanWithPackages([]), $root, '8.5');
 
     expect($gate->allows('php'))->toBeTrue()            // php/core: core segment
         ->and($gate->allows('php', '8.4'))->toBeTrue()  // <= floor
@@ -215,7 +258,7 @@ test('scopes php version dirs cumulative-downward to the declared floor', functi
 
 test('a lower php floor drops higher version dirs', function (): void {
     $root = gateAiRoot([]);
-    $gate = LaravelBoostGuidelineGate::fromRoster(gateRoster([]), $root, '8.3');
+    $gate = LaravelBoostGuidelineGate::fromProjectScan(scanWithPackages([]), $root, '8.3');
 
     expect($gate->allows('php', '8.3'))->toBeTrue()
         ->and($gate->allows('php', '8.4'))->toBeFalse()
@@ -224,7 +267,7 @@ test('a lower php floor drops higher version dirs', function (): void {
 
 test('keeps all php version dirs when the floor is unknown (never-lossy)', function (): void {
     $root = gateAiRoot([]);
-    $gate = LaravelBoostGuidelineGate::fromRoster(gateRoster([]), $root);
+    $gate = LaravelBoostGuidelineGate::fromProjectScan(scanWithPackages([]), $root);
 
     expect($gate->allows('php', '8.4'))->toBeTrue()
         ->and($gate->allows('php', '8.5'))->toBeTrue()

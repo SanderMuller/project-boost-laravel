@@ -5,6 +5,166 @@ All notable changes to `sandermuller/project-boost-laravel` will be documented i
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.1](https://github.com/sandermuller/project-boost-laravel/compare/1.4.0...1.4.1) - 2026-09-18
+
+<!-- verified-sha: 74dd7e111d8db67ab1dfc98d4b997777d066487b -->
+### Changed
+
+- `project-boost:sync` no longer prints one line per unchanged file. On a real project that list runs to several hundred lines and buries the handful of `wrote` paths. The unchanged paths now collapse into one counted line per directory, printed after the per-path lines:
+  
+  ```
+  wrote .claude/skills/pull-requests/SKILL.md
+  unchanged 107 file(s) in .claude/skills
+  unchanged 19 file(s) in .claude/agents
+  unchanged 3 file(s) in .claude/commands
+  
+  ```
+  The count is over distinct paths, and a path already listed under another action is left out of it. Two agent targets can emit into the same directory, so one path can appear twice in the write list — counting entries would report double the files that exist there, and a path written for one target but unchanged for the next would be both listed and counted.
+  
+  `wrote` and `deleted` paths still get one line each, and the `wrote=… unchanged=… deleted=…` summary is unchanged.
+  
+
+**Full Changelog**: https://github.com/SanderMuller/project-boost-laravel/compare/1.4.0...1.4.1
+
+## [1.4.0](https://github.com/sandermuller/project-boost-laravel/compare/1.3.1...1.4.0) - 2026-08-29
+
+<!-- verified-sha: df60caa31ea07a520774c9ca9d37481711f05f06 -->
+### Fixed
+
+- **`project-boost:where` no longer blames the tag filter for a render failure.** A skill whose source fails to render is excluded from the resolved set rather than reported, so it never appears among the planned writes, and the status column fell through to `filtered (declare: …)` — telling an operator to add a tag when a renderer had thrown. The listing now consults `SyncResult::hasErrors()`: a run carrying errors prints them and reports every non-shipping skill as `not shipping (reason unknown — see errors)`. `ship` and `shadowed by` are unaffected, since both remain true of the skills they describe. The errors themselves are rendered by `boost-core`, which covers the emitter channel as well — an emitter that fails does not appear in the error list, and reading one channel and not the other is how a failed run reports as a clean one.
+  
+- **`project-boost:where` matched emitted paths with a pattern nothing promised.** Shipped state came from `#/skills/([^/]+)/SKILL\.md$#` against each write. The frozen contract is `AgentTarget::skillsDirectoryRelative()`, not the fact that its value ends in `/skills`, and the entry filename sits behind `skillRelativePathForName()`. A layout change inside `boost-core`'s own promise would have matched nothing and reported every skill as not shipping, silently and with a zero exit. `SkillShipmentIndex` owns the inverse of that method, so the assumption is gone.
+  
+- **A host skill shadowing several vendors named one of them.** The shadow map kept the last vendor seen while reading as a complete answer. All shadowing vendors are now listed.
+  
+- **`project-boost:sync` exited `0` after printing a fatal error.** A dry-run that finds a conventions schema error or a leaked `boost:conv` token in emitted output now exits `1`. Drift alone still exits `0` — that is the documented behaviour and it has not changed.
+  
+
+### Changed
+
+- **Both commands render through `boost-core`'s `SyncReporter`.** The drift list, diagnostics, delete attribution and summary line came from a private copy in this package that could word the same result differently from `vendor/bin/boost sync`. The exit rule stays here: `render()` reports what it found and this package decides, so `--dry-run` keeps its documented `0` on drift.
+  
+- **The summary line is now the one the Composer hook parses.** `boost-core`'s auto-sync reads `wrote=`/`unchanged=`/`deleted=` from sync output to decide whether a `post-install-cmd` stays quiet on a no-op. This package emitted a differently-shaped line, so a hook pointed at the artisan command would have gone silent on a real change, or spoken on a no-op, with nothing to indicate why.
+  
+- **Follow-up advice names this package's commands.** The report's tag-filter nudge pointed at `vendor/bin/boost tags`, which in a project using this package lists a materially thinner set. It now points at `project-boost:where`.
+  
+
+### Added
+
+- **`composer.json` declares `extra.boost.entry-point`.** A bare `vendor/bin/boost sync`, `where` or `install` in a project that installs this package now names the artisan equivalent instead of quietly running a pipeline without the injected skills. `boost-core` reads the declaration as JSON, so it works even when this package's own command cannot boot. It is inert in this repository's own checkout, where the bare CLI is the correct tool.
+
+### Internal
+
+- The status decision moved to `InjectedSkillStatus`, which takes a `SyncResult` and is covered by unit tests — including the case where only an emitter failed, which the error list does not contain.
+
+Found while installing the package into a downstream Laravel application. Validated across the CI matrix (PHP 8.3/8.4 × Laravel 12/13, `prefer-lowest` and `prefer-stable`).
+
+**Full Changelog**: https://github.com/SanderMuller/project-boost-laravel/compare/1.3.1...1.4.0
+
+## [1.3.1](https://github.com/sandermuller/project-boost-laravel/compare/1.3.0...1.3.1) - 2026-08-28
+
+<!-- verified-sha: 2b7398cda14fa0fea2218f8ad912aa582998dae4 -->
+Injected `laravel/boost` skills now ship with the companion files they link. Before this release, a skill like `laravel-best-practices` emitted a `SKILL.md` whose routing table pointed at `rules/*.md` files nothing ever wrote. Bug fix; no migration.
+
+```bash
+composer update sandermuller/project-boost-laravel
+
+
+
+```
+### Fixed
+
+- **An injected skill's asset siblings are emitted alongside its `SKILL.md`.** The reader found only the `SKILL.*` entry file, so `Skill::$assets` was always empty and every companion file laravel/boost ships in `rules/` or `references/` was dropped. The emitted skill kept its links to those files, which is why the failure was quiet: the skill looks complete and its routing table goes nowhere. Skills discovered by boost-core's own vendor scan were never affected — this was the injection path alone.
+  
+  - **Blade companions are rendered, not copied.** Nine of the `testing-best-practices` rules and the `infer-conventions` checklist are Blade with real logic (`$assist->hasPackage('pestphp/pest')` and similar), and the entry body links `rules/assertions.md`, never the Blade source name. So a `.blade.php` companion runs through the same renderer as the entry file and is emitted under its `.md` name. A `.md` companion passes through byte-for-byte.
+  - **A companion that cannot be produced is reported, never guessed at.** A Blade render failure, an unreadable file, and two sources claiming one emit path each drop that single file and name it in the sync output — the skill still ships. `project-boost:sync` now prints the reader's render errors, which previously accumulated where nothing read them, so a sync can no longer report success while emitting a skill with dead links.
+  - **This refreshes copies left behind by the retired `boost:update`.** A project that ran `php artisan boost:update` before adopting this package has those companion files on disk already, and they were frozen: reported as written by another tool and preserved, and `boost:update` refuses to run once `boost.json` is retired. The sync now owns and rewrites them.
+  
+- **Companion files are claimed against boost-core's stale-file cleanup.** An emitted path that no wrapper claims is reaped, so without this the assets would be written and then deleted on the next bare `vendor/bin/boost sync`. Skill names stay over-declared, because a name this sync did not emit has no file to preserve. Assets are claimed for the version-resolved variant only: a claim exempts a path on every sync, so claiming an obsolete variant's asset would strand it on disk forever after a major upgrade — a `pest/3` rule surviving the move to Pest 4. The variant resolves through the same resolver the sync uses, through a shared path-level seam so the two cannot disagree. A host whose package scan cannot be read falls back to the version proxy rather than dropping the claim, since a dropped claim would reap every injected skill file in that project.
+  
+
+Reported from production dogfood while installing the package into a downstream Laravel application. Validated across the CI matrix (PHP 8.3/8.4 × Laravel 12/13, `prefer-lowest` and `prefer-stable`), and against `laravel/boost`'s real Blade payload.
+
+**Full Changelog**: https://github.com/SanderMuller/project-boost-laravel/compare/1.3.0...1.3.1
+
+## [1.3.0](https://github.com/sandermuller/project-boost-laravel/compare/1.2.0...1.3.0) - 2026-08-15
+
+<!-- verified-sha: f7555f99e835d92ffdd4d4d2f1f97e42ade01278 -->
+`project-boost:sync` now retires `laravel/boost`'s `boost.json` once it has taken over what that file describes — the step that stops `herd link` from silently re-seeding guidance behind this package. Additive; no migration.
+
+**Action required:** this release requires `sandermuller/boost-core ^1.6` (up from `^1.0`).
+
+```bash
+composer require --dev "sandermuller/project-boost-laravel:^1.3" -W
+
+
+
+
+```
+### Added
+
+- **`project-boost:sync` retires `laravel/boost`'s `boost.json` after a successful sync.** The file is laravel/boost's install state, read by `boost:install` and `boost:update` and nothing else — not the MCP server (`boost:mcp` starts a server the ServiceProvider registers unconditionally), not this package (it re-derives from `vendor/laravel/boost/.ai/` every run), not boost-core. Retiring it is what stops the automatic re-seed: `boost:update` bails out when the file is missing, and **`herd link` runs `php artisan boost:update` on its own** whenever `vendor/laravel/boost` is present (Herd's bundled valet CLI), which otherwise rewrites the guidance files inside laravel/boost's marker and reinstalls its skill directories behind this command's back.
+  - **Adopt before retire.** The file's `agents` list is the only record of what was picked in laravel/boost's installer, and nothing imports it automatically. While it names an agent the project's own config does not declare, the file stays put and the sync says which agent and how to adopt it — `vendor/bin/boost install` pre-selects exactly that set. An agent boost-core has no case for (`antigravity`, `factory`, `grok_build`, `pi`, `zed`) can never be adopted, so it never blocks; the sync names it instead, because nothing this package emits reaches that agent and retiring the file ends laravel/boost's updates for it too.
+  - **Archived, not deleted.** The file moves to `.boost/boost.json.retired` (or `.config/boost/boost.json.retired` when the project uses that config layout — the layout decides, not whichever directory happens to exist). Both directories are gitignored by boost-core and skipped by its stale-file sweep, so the archive survives later syncs and never dirties the working tree. An existing archive is never overwritten: identical content means the source is simply dropped, and different content is archived alongside under a content-addressed name. Restore from there, or run `php artisan boost:install` to regenerate.
+  - **Only on a real takeover.** A sync that injected no laravel/boost skills or guidelines (laravel/boost export-ignores its `.ai` payload, so a prefer-dist install has none), or that skipped a guidance path because it is a live symlink, has taken over nothing — neither case is an error, so the sync still exits `0`, and in both the file is kept with the reason printed.
+  - Further guards: with gitignore management off there is no state directory to archive into, so the file is kept rather than parked somewhere untracked; a symlink anywhere on the destination path is refused (`rename()` would follow it out of the project); an archive name already taken by different content is refused rather than overwritten; a `boost.json` recording no agent list is not laravel/boost's live install state — another tool's file, or one `boost:update` already refuses to act on — and is kept; a failed sync keeps the file, since laravel/boost's own path stays the fallback; a failed archive leaves the original in place.
+  - `--dry-run` reports `would-archive` and moves nothing. `--keep-boost-json` opts out entirely.
+  
+
+### Changed
+
+- **Requires `sandermuller/boost-core ^1.6`** (was `^1.0`). Two behaviours the retirement flow is documented against landed in `1.6.0`: the stale-file sweep is manifest-gated, so the `.boost/boost.json.retired` archive survives later syncs instead of being reaped as unowned; and `boost install` pre-selects the agents recorded in laravel/boost's `boost.json`, which is the adoption step this command waits for before retiring the file.
+
+`--keep-boost-json` joins the frozen CLI surface in `PUBLIC_API.md` from this release. Validated across the CI matrix (PHP 8.3/8.4 × Laravel 12/13, `prefer-lowest` and `prefer-stable`).
+
+**Full Changelog**: https://github.com/SanderMuller/project-boost-laravel/compare/1.2.0...1.3.0
+
+## 1.2.0 - 2026-08-05
+
+<!-- verified-sha: 5b2c79aa75f0cd17ba3ee48a45496f431ef3893d -->
+Restores compatibility with `laravel/roster 1.0.0`, whose API rewrite made every `composer update` on a consumer app hard-crash during the `project-boost:sync` post-hook.
+
+**Action required:** this release requires `laravel/boost ^2.5` (up from `^2.4`). See [UPGRADING.md](UPGRADING.md#from-11-to-12).
+
+```bash
+composer require --dev "sandermuller/project-boost-laravel:^1.2" -W
+
+
+
+
+
+```
+`-W` matters: `laravel/boost` is usually a sibling top-level require in the consuming app, so it has to move to `^2.5` in the same resolve.
+
+### Fixed
+
+- **`composer update` / `install` no longer fatals with `Class "Laravel\Roster\Enums\Packages" not found`.** `laravel/roster 1.0.0` (2026-07-18) removed the `Packages` enum and the `Roster` class this package was built against. The failure was unrecoverable rather than degrading to the intended permissive fallback: `LaravelBoostGuidelineGate::EXCLUDED_PACKAGES` referenced enum cases in a class-constant initializer, which PHP evaluates on class initialization — so `permissive()`, the graceful-fallback path itself, threw before any `class_exists()` guard could run. Package identity is now a plain composer/npm name string throughout, and `Roster::scan()` becomes `ProjectScan::scan()`.
+  
+- **Guideline dirs resolve through `laravel/boost`'s own name mapper.** Package name → guideline dir now delegates to `PackageRegistry::guidelineName()` instead of slugifying locally. Pre-1.0 Roster's `Package::name()` returned the enum *case name* (`FLUXUI_PRO`), which the old slugify handled correctly; Roster 1.0 returns the composer name (`livewire/flux-pro`), which it would not have. Left unfixed, this would have replaced the fatal with silence — every package guideline suppressed, no error.
+  
+- **npm-ecosystem packages are gated again.** Discovery scans both ecosystems (`php()` + `js()`), matching `laravel/boost`'s own `DiscoverPackagePaths::packages()`. The `inertia-react`, `inertia-svelte`, `inertia-vue` and `tailwindcss` guideline dirs are npm-driven and had no gate signal from a php-only scan.
+  
+
+### Changed
+
+- **Requires `laravel/boost ^2.5`** (was `^2.4`). `Laravel\Boost\Support\PackageRegistry` — which this package now mirrors for package constants and the name → dir map — landed in `2.5.0` alongside boost's own Roster 1.0 adaptation. `2.4.x` still requires `laravel/roster ^0.5`, so there is no version of this fix that works on the `2.4` line.
+  
+- **`laravel/roster ^1.0` is now an explicit requirement.** It was previously pulled in only transitively through `laravel/boost`, despite this package type-hinting its classes directly — which is how a major upstream rewrite reached consumers with no constraint to stop it.
+  
+- **The known-package universe is derived from the dirs `laravel/boost` ships** under `.ai/`, rather than enumerated from a hardcoded list. Roster 1.0 removed the enum that supplied it, and boost's replacement keeps its name → dir map private. Scanning is also self-maintaining: a guideline dir boost adds in a future release is gated correctly without a release here. Verified equivalent against boost 2.5 — every package dir it ships was a `Packages` case, and the enum cases with no shipped dir were already no-ops.
+  
+
+### Internal
+
+- `LaravelBoostGuidelineGate::fromRoster()` became `fromProjectScan()` and takes a `ProjectScan`; `VersionResolver` takes a `?ProjectScan`. Both are `@internal` — the `PUBLIC_API.md` surface (CLI commands, options, exit codes, config keys) is unchanged.
+  
+- Added a regression guard asserting the gate's exclusion and must-be-direct lists still match `laravel/boost`'s own. The gate is a 1:1 mirror of `DiscoverPackagePaths`, and unlike a removed class, a changed policy array drifts silently — no fatal, just guidelines quietly emitted or suppressed.
+  
+- Dropped the abandoned `rector/type-perfect` dev dependency, superseded by `tomasvotruba/type-coverage`, which now bundles it. Both installed made PHPStan abort during container compilation on a duplicate service registration, exiting non-zero with no output — so the quality gate looked green while analysing nothing.
+  
+
+**Full Changelog**: https://github.com/SanderMuller/project-boost-laravel/compare/1.1.0...1.2.0
+
 ## 1.1.0 - 2026-06-05
 
 <!-- verified-sha: cd1316735c6f6e36ec3ad0df05bc35a0faac5ae7 -->
@@ -18,7 +178,7 @@ Adds `project-boost:reconcile` — a guided takeover that captures laravel/boost
 
 ### Docs
 
-- New [`docs/laravel-coexistence.md`](../docs/laravel-coexistence.md): the canonical command sequence (`boost:install` once → `project-boost:reconcile` once → `project-boost:sync` ongoing), the division of labor with `laravel/boost`, and why a bare `vendor/bin/boost sync` on a wrapper project loses content. The README and `PUBLIC_API.md` (which adds `project-boost:reconcile` to the frozen CLI surface) link to it.
+- New [`docs/laravel-coexistence.md`](https://sandermuller.github.io/boost-core/guide/laravel-coexistence): the canonical command sequence (`boost:install` once → `project-boost:reconcile` once → `project-boost:sync` ongoing), the division of labor with `laravel/boost`, and why a bare `vendor/bin/boost sync` on a wrapper project loses content. The README and `PUBLIC_API.md` (which adds `project-boost:reconcile` to the frozen CLI surface) link to it.
 
 The new command is part of the `1.x` `@api`/CLI surface from this release. Requires `boost-core ^1.0`; validated across the CI matrix.
 
@@ -93,6 +253,11 @@ Adopts the boost-core `0.23` line and locks the package's `@api`/`@internal` sur
   
   
   
+  
+  
+  
+  
+  
   ```
   If you require any boost package directly, move them to the `0.23` line together. Running against `boost-core < 0.23` no longer resolves.
   
@@ -141,6 +306,11 @@ Adopts the boost-core `0.22` line and moves every sync-driving and wrapper code 
   
   ```bash
   composer require "sandermuller/project-boost-laravel:^0.9"
+  
+  
+  
+  
+  
   
   
   
@@ -225,6 +395,11 @@ composer require sandermuller/boost-core:^0.16
 
 
 
+
+
+
+
+
 ```
 **Why ^0.16 specifically.** boost-skills 2.0 migrated its skills to render-time conventions tokens. Its Jira skills inline a `mcp.jira` sub-key conventions token that only resolves on boost-core 0.16 — on 0.15 the resolver short-circuits the open-vocab schema leaf and emits the token raw (broken skill body). So a project on boost-skills 2.0 needs boost-core 0.16 at render time; aligning this package's floor to `^0.16` keeps the two in lockstep and avoids a resolution conflict (boost-skills 2.0 declares its own direct `boost-core ^0.16`).
 
@@ -240,6 +415,11 @@ Not consumer-facing, but for contributors: `sandermuller/boost-skills` `^1.9 →
 composer require sandermuller/boost-core:^0.16   # or just composer update if tracked transitively
 composer update sandermuller/project-boost-laravel sandermuller/boost-core
 php artisan project-boost:sync
+
+
+
+
+
 
 
 
@@ -298,6 +478,11 @@ composer require sandermuller/boost-core:^0.14
 
 
 
+
+
+
+
+
 ```
 (Consumers who track boost-core transitively through this package get it on a `composer update --with-all-dependencies` — no explicit require needed.)
 
@@ -326,6 +511,11 @@ Crosses the package to **`boost-core ^0.13`** (floor bump — adopters must move
 
 ```bash
 composer require sandermuller/boost-core:^0.13
+
+
+
+
+
 
 
 
@@ -369,6 +559,11 @@ The dev-only `sandermuller/package-boost-php` constraint moved to `^0.15.0` (it 
 composer require sandermuller/boost-core:^0.13
 composer update sandermuller/project-boost-laravel sandermuller/boost-core
 php artisan project-boost:sync
+
+
+
+
+
 
 
 
@@ -616,6 +811,11 @@ declaration.
 
 
 
+
+
+
+
+
 ```
 Combined with the engine's 0.9.3 safety gate (which converts the thrown exception into a `SyncResult::error` rather than letting it propagate mid-write), the worst-case path is now: operator sees a clear message, no partial writes happen, recovery is straightforward.
 
@@ -679,6 +879,11 @@ Sync complete · wrote=1 · deleted=0 · unchanged=118
 
 
 
+
+
+
+
+
 ```
 Same output between "no divergence" and "divergence resolved by re-render" runs. Operator sees the re-render happened but gets no signal explaining the WHY — even when the engine emitted a parseable-divergence warning to the diagnostics channel.
 
@@ -694,6 +899,11 @@ Project Conventions
   ⚠ db-strategy: CLAUDE.md body diverged from boost.php's withConventions(); re-rendered from boost.php as canonical source.
 
 Sync complete · wrote=1 · deleted=0 · unchanged=118
+
+
+
+
+
 
 
 
@@ -933,6 +1143,11 @@ PROJECT_BOOST_SUPPRESS_UPSTREAM=true
 
 
 
+
+
+
+
+
 ```
 A `CommandStarting` event listener intercepts the `boost:install` command and force-injects `--mcp` if it wasn't already passed. laravel/boost short-circuits its feature-selection step (the gate for its guideline + skill writers) when `--mcp` is set, so the user-visible outcome matches what `--mcp` would have produced.
 
@@ -975,6 +1190,11 @@ If you want the defensive `suppress_upstream_writers` guardrail active, add `PRO
 
 ```bash
 php artisan project-boost:where
+
+
+
+
+
 
 
 
@@ -1114,6 +1334,11 @@ This package closes those gaps. laravel/boost still owns the MCP server (its cor
 
 ```bash
 composer require --dev sandermuller/project-boost-laravel
+
+
+
+
+
 
 
 

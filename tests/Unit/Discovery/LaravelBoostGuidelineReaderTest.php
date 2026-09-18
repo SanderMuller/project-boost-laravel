@@ -1,8 +1,6 @@
 <?php declare(strict_types=1);
 
-use Laravel\Roster\Enums\Packages;
-use Laravel\Roster\Package;
-use Laravel\Roster\Roster;
+use Laravel\Boost\Support\PackageRegistry;
 use SanderMuller\BoostCore\Contracts\SkillRenderer;
 use SanderMuller\BoostCore\Skills\Guideline;
 use SanderMuller\BoostCore\Skills\Rendering\RenderContext;
@@ -43,19 +41,6 @@ function passthroughBladeRenderer(): SkillRenderer
             return $raw;
         }
     };
-}
-
-/** @param  list<array{0: Packages, 1: bool, 2?: string}>  $packages */
-function readerRoster(array $packages): Roster
-{
-    $roster = new Roster();
-    foreach ($packages as $entry) {
-        [$enum, $direct] = $entry;
-        $version = $entry[2] ?? '1.0.0';
-        $roster->add((new Package($enum, $enum->value, $version))->setDirect($direct));
-    }
-
-    return $roster;
 }
 
 function removeReaderFixture(string $path): void
@@ -116,8 +101,8 @@ test('install gate suppresses guidelines for packages the host has not installed
     writeGuideline($root, 'pest/core.blade.php');
     writeGuideline($root, 'inertia-laravel/core.blade.php');
 
-    $gate = LaravelBoostGuidelineGate::fromRoster(
-        readerRoster([[Packages::PHPUNIT, true]]),
+    $gate = LaravelBoostGuidelineGate::fromProjectScan(
+        scanWithPackages([[PackageRegistry::PHPUNIT, true]]),
         $root,
     );
 
@@ -144,8 +129,8 @@ test('install gate keeps non-composer-package guidelines like herd while gating 
     writeGuideline($root, 'phpunit/core.blade.php');
     writeGuideline($root, 'inertia-laravel/core.blade.php');
 
-    $gate = LaravelBoostGuidelineGate::fromRoster(
-        readerRoster([[Packages::PHPUNIT, true]]),
+    $gate = LaravelBoostGuidelineGate::fromProjectScan(
+        scanWithPackages([[PackageRegistry::PHPUNIT, true]]),
         $root,
     );
 
@@ -168,8 +153,8 @@ test('install gate applies PEST-over-PHPUNIT priority to per-package guidelines'
     writeGuideline($root, 'pest/core.blade.php');
     writeGuideline($root, 'phpunit/core.blade.php');
 
-    $gate = LaravelBoostGuidelineGate::fromRoster(
-        readerRoster([[Packages::PEST, true], [Packages::PHPUNIT, true]]),
+    $gate = LaravelBoostGuidelineGate::fromProjectScan(
+        scanWithPackages([[PackageRegistry::PEST, true], [PackageRegistry::PHPUNIT, true]]),
         $root,
     );
 
@@ -191,8 +176,8 @@ test('install gate keeps the host-major per-major guideline files for an install
     writeGuideline($root, 'livewire/3/testing.blade.php');
 
     // Host on Livewire 3 → the livewire/3 fragment is the host major.
-    $gate = LaravelBoostGuidelineGate::fromRoster(
-        readerRoster([[Packages::LIVEWIRE, true, '3.0.0']]),
+    $gate = LaravelBoostGuidelineGate::fromProjectScan(
+        scanWithPackages([[PackageRegistry::LIVEWIRE, true, '3.0.0']]),
         $root,
     );
 
@@ -219,8 +204,8 @@ test('install gate scopes laravel to host major and php to the declared floor', 
     writeGuideline($root, 'php/8.5/core.blade.php');
 
     // Host on Laravel 12, PHP floor 8.3.
-    $gate = LaravelBoostGuidelineGate::fromRoster(
-        readerRoster([[Packages::LARAVEL, true, '12.0.0']]),
+    $gate = LaravelBoostGuidelineGate::fromProjectScan(
+        scanWithPackages([[PackageRegistry::LARAVEL, true, '12.0.0']]),
         $root,
         '8.3',
     );
@@ -248,7 +233,7 @@ test('install gate keeps php version fragments at or below the declared floor', 
     writeGuideline($root, 'php/8.6/core.blade.php');
 
     // PHP floor 8.5 → keep 8.4 + 8.5 (cumulative), drop 8.6 (above range).
-    $gate = LaravelBoostGuidelineGate::fromRoster(readerRoster([]), $root, '8.5');
+    $gate = LaravelBoostGuidelineGate::fromProjectScan(scanWithPackages([]), $root, '8.5');
 
     $reader = new LaravelBoostGuidelineReader(
         $root,
@@ -269,7 +254,7 @@ test('reader skips guidelines that render empty (filled() mirror)', function ():
     writeGuideline($root, 'php/8.5/core.blade.php', '   '); // whitespace-only → empty
 
     // Floor 8.5 keeps php/8.5, but it renders empty → reader drops it anyway.
-    $gate = LaravelBoostGuidelineGate::fromRoster(readerRoster([]), $root, '8.5');
+    $gate = LaravelBoostGuidelineGate::fromProjectScan(scanWithPackages([]), $root, '8.5');
 
     $reader = new LaravelBoostGuidelineReader(
         $root,

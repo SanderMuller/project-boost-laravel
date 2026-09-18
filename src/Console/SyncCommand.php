@@ -3,14 +3,18 @@
 namespace SanderMuller\ProjectBoostLaravel\Console;
 
 use Illuminate\Console\Command;
-use Laravel\Roster\Roster;
+use Laravel\Roster\ProjectScan;
 use SanderMuller\BoostCore\Config\BoostConfig;
 use SanderMuller\BoostCore\Skills\Guideline;
 use SanderMuller\BoostCore\Skills\Skill;
 use SanderMuller\BoostCore\Sync\BoostSync;
-use SanderMuller\BoostCore\Sync\EmitterAction;
+use SanderMuller\BoostCore\Sync\SyncReporter;
 use SanderMuller\BoostCore\Sync\SyncResult;
 use SanderMuller\BoostCore\Sync\WriteAction;
+use SanderMuller\BoostCore\Sync\WrittenFile;
+use SanderMuller\ProjectBoostLaravel\Coexistence\BoostJsonOutcome;
+use SanderMuller\ProjectBoostLaravel\Coexistence\BoostJsonRemoval;
+use SanderMuller\ProjectBoostLaravel\Coexistence\BoostJsonRemover;
 use SanderMuller\ProjectBoostLaravel\Console\Concerns\GatesGuidelines;
 use SanderMuller\ProjectBoostLaravel\Console\Concerns\LoadsBoostConfig;
 use SanderMuller\ProjectBoostLaravel\Console\Concerns\ResolvesAiRoot;
@@ -52,7 +56,8 @@ final class SyncCommand extends Command
     /** @var string */
     protected $signature = 'project-boost:sync
         {--dry-run : Preview the full SyncEngine pipeline (laravel/boost + host + scanned vendors + remote skills) in check mode.}
-        {--show-untagged : Also print the laravel/boost injection-set discovery tables (skills + guidelines, all rows including untagged).}';
+        {--show-untagged : Also print the laravel/boost injection-set discovery tables (skills + guidelines, all rows including untagged).}
+        {--keep-boost-json : Leave laravel/boost\'s boost.json in place. By default a successful sync removes it, which stops `boost:update` (and therefore `herd link`) from re-seeding behind this command.}';
 
     /** @var string */
     protected $description = 'Sync laravel/boost-bundled skills through boost-core (with Blade rendering + sidecar tags + project withTags filter).';
@@ -64,10 +69,10 @@ final class SyncCommand extends Command
         $manifest = LaravelBoostTagManifest::fromFile($manifestPath);
         $aiRoot = $this->resolveLaravelBoostAiRoot();
 
-        // Scan the host roster once and share it with both the version
+        // Scan the host project once and share it with both the version
         // resolver (per-major skill dedupe) and the guideline install-gate
         // (suppresses guidelines for packages the host hasn't installed).
-        $roster = class_exists(Roster::class) ? Roster::scan(base_path()) : null;
+        $scan = class_exists(ProjectScan::class) ? ProjectScan::scan(base_path()) : null;
 
         $skillReader = new LaravelBoostAssetReader(
             laravelBoostAiRoot: $aiRoot,
@@ -78,11 +83,30 @@ final class SyncCommand extends Command
             laravelBoostAiRoot: $aiRoot,
             tagManifest: $manifest,
             bladeRenderer: $blade,
-            installGate: $this->guidelineGate($roster, $aiRoot, base_path()),
+            installGate: $this->guidelineGate($scan, $aiRoot, base_path()),
         );
 
         $allSkills = $skillReader->readSkills();
         $allGuidelines = $guidelineReader->readGuidelines();
+
+        // A dropped skill, guideline, or asset still lets the sync report
+        // success, so the readers' out-params have to be spoken aloud here —
+        // an emitted SKILL.md whose `rules/*.md` links go nowhere otherwise
+        // looks identical to a healthy one.
+        foreach ([...$skillReader->renderErrors(), ...$guidelineReader->renderErrors()] as $renderError) {
+            $this->warn($renderError);
+        }
+
+        // Blade skipped for want of a renderer is not an error — it is the
+        // documented no-renderer path. Both commands wire a BladeRenderer, so
+        // this fires only if that wiring is ever removed.
+        $skippedAssets = $skillReader->skippedBladeAssets();
+        if ($skippedAssets > 0) {
+            $this->warn(sprintf(
+                '%d laravel/boost skill asset(s) skipped: no Blade renderer is wired, so files the skills link were not rendered.',
+                $skippedAssets,
+            ));
+        }
 
         // Empty laravel/boost discovery is not fatal — boost-core still has
         // host `.ai/skills/`, scanned vendors, and remote skills to process.
@@ -99,7 +123,7 @@ final class SyncCommand extends Command
         // before injection. VersionResolver uses laravel/roster to match
         // the host's installed major when possible; falls back to lex-last
         // sourcePath when Roster can't resolve.
-        $skills = (new VersionResolver($roster))->resolve($allSkills);
+        $skills = (new VersionResolver($scan))->resolve($allSkills);
 
         // Guideline dedupe — same shape as skills. core.blade.php for a
         // package is one name; per-major guideline files include the major
@@ -141,7 +165,128 @@ final class SyncCommand extends Command
 
         $result = $this->invokeSyncEngine($projectRoot, $skills, $guidelines, checkOnly: false);
 
-        return $this->renderResult($result, checkOnly: false);
+        $exit = $this->renderResult($result, checkOnly: false);
+
+        // Only after a clean sync: the state file describes emission this command
+        // has now taken over. On a failed sync laravel/boost's own path stays the
+        // fallback, so its state must survive.
+        if ($exit === self::SUCCESS) {
+            $this->reportBoostJsonRemoval($projectRoot, $config, dryRun: false, notTakenOver: $this->takeoverGap($skills, $guidelines, $result));
+        }
+
+        return $exit;
+    }
+
+    /**
+     * Retire laravel/boost's `boost.json` once this sync owns the guidance and
+     * skills it describes — see {@see BoostJsonRemover} for why that is safe, why it
+     * matters (it makes the automatic `herd link` → `boost:update` re-seed inert),
+     * why the file is archived rather than deleted, and why it stays put until its
+     * agent list has been adopted. `--keep-boost-json` opts out.
+     *
+     * `$notTakenOver` carries the reason this sync did NOT take over what the state
+     * file describes ({@see takeoverGap()}), or null when it did.
+     */
+    private function reportBoostJsonRemoval(string $projectRoot, BoostConfig $config, bool $dryRun, ?string $notTakenOver): void
+    {
+        if ($this->option('keep-boost-json')) {
+            return;
+        }
+
+        if ($notTakenOver !== null) {
+            if (is_file($projectRoot . '/' . BoostJsonRemover::FILE)) {
+                $this->warn(sprintf(
+                    'boost.json kept: %s, so this sync has not taken over what that file describes. Retiring it here '
+                    . 'would stop `boost:update` from re-seeding content nothing else emits.',
+                    $notTakenOver,
+                ));
+            }
+
+            return;
+        }
+
+        $outcome = (new BoostJsonRemover())->retire($projectRoot, $config, $dryRun);
+
+        match ($outcome->status) {
+            BoostJsonRemoval::ARCHIVED => $this->line(sprintf(
+                '  <fg=green>archived</> boost.json → %s <fg=gray>(laravel/boost install state — this sync owns the guidance + skills it described. '
+                . '`boost:update`, which `herd link` runs automatically, now refuses to run instead of re-seeding. Nothing else reads it: not the MCP server, not this command. '
+                . 'Restore it from there, or run `php artisan boost:install` to regenerate; keep it in place next time with `--keep-boost-json`.)</>',
+                $outcome->archivePath,
+            )),
+            BoostJsonRemoval::WOULD_ARCHIVE => $this->line(sprintf(
+                '  <fg=green>would-archive</> boost.json → %s <fg=gray>(a real sync moves it there so `boost:update` / `herd link` stop re-seeding. Keep it with `--keep-boost-json`.)</>',
+                $outcome->archivePath,
+            )),
+            BoostJsonRemoval::AGENTS_NOT_ADOPTED => $this->warnAgentsNotAdopted($outcome),
+            BoostJsonRemoval::NO_ARCHIVE_LOCATION => $this->warn(
+                'boost.json kept: there is no safe place to archive it. Either gitignore management is off (creating a '
+                . 'state directory would leave an untracked one behind), a path in the way is a symlink, or the archive '
+                . 'name is taken by different content. Move or delete the file yourself to stop `boost:update` — and the '
+                . '`herd link` trigger — from re-seeding.',
+            ),
+            BoostJsonRemoval::SYMLINK => $this->warn(
+                'boost.json is a symlink — left untouched. Remove it by hand if you want `boost:update` (and the `herd link` trigger) to stop re-seeding.',
+            ),
+            BoostJsonRemoval::FOREIGN => $this->line(
+                '  <fg=gray>kept boost.json — it records no agent list, so it is not laravel/boost\'s live install state (another tool\'s file, or one `boost:update` already refuses to act on).</>',
+            ),
+            BoostJsonRemoval::FAILED => $this->warn(
+                'Could not archive boost.json (permission or filesystem error). It is still in place, so `boost:update` will keep re-seeding.',
+            ),
+            BoostJsonRemoval::ABSENT => null,
+        };
+
+        if ($outcome->unsupportedAgents !== []) {
+            $this->warn(sprintf(
+                'boost.json also recorded agent(s) boost-core has no case for — %s. Nothing this package emits reaches '
+                . "them, and retiring the file ends laravel/boost's updates for them too. Keep the file with "
+                . '`--keep-boost-json` if those agents still matter to you.',
+                implode(', ', $outcome->unsupportedAgents),
+            ));
+        }
+    }
+
+    /**
+     * Why this sync did not take over laravel/boost's emission — or null when it did.
+     *
+     * Two gaps leave `boost:update` as the only path to that content, so retiring its
+     * state file would disable the fallback with nothing in its place: an injection set
+     * that is empty (laravel/boost export-ignores its `.ai` payload, so a prefer-dist
+     * install has none), and a guidance file boost-core skipped because the path is a
+     * live symlink — not an error, so the sync still exits 0, but that agent's file was
+     * never written.
+     *
+     * @param  list<Skill>  $skills
+     * @param  list<Guideline>  $guidelines
+     */
+    private function takeoverGap(array $skills, array $guidelines, SyncResult $result): ?string
+    {
+        if ($skills === [] && $guidelines === []) {
+            return 'this sync injected no laravel/boost skills or guidelines';
+        }
+
+        $skippedSymlinks = $result->countByAction(WriteAction::SKIPPED_SYMLINK);
+
+        return $skippedSymlinks > 0
+            ? sprintf('%d output path(s) were skipped as symlinks, so their guidance was never written', $skippedSymlinks)
+            : null;
+    }
+
+    /**
+     * The file still records agents this project's own config does not declare, and
+     * nothing imports them automatically — retiring it would destroy the only record
+     * of that choice. Say which agents, and name the command that adopts them
+     * (boost-core's install picker pre-selects exactly this set).
+     */
+    private function warnAgentsNotAdopted(BoostJsonOutcome $outcome): void
+    {
+        $this->warn(sprintf(
+            'boost.json kept: it lists agent(s) your boost config does not — %s. Run `vendor/bin/boost install` '
+            . '(its picker pre-selects them) or add them to `withAgents([...])`, then sync again; the file is '
+            . 'archived once nothing would be lost. `--keep-boost-json` silences this step entirely.',
+            implode(', ', $outcome->unadoptedAgents),
+        ));
     }
 
     /**
@@ -182,7 +327,8 @@ final class SyncCommand extends Command
     private function reportDryRun(array $skills, array $guidelines): int
     {
         $projectRoot = base_path();
-        if (! $this->loadBoostConfigOrHint($projectRoot) instanceof BoostConfig) {
+        $config = $this->loadBoostConfigOrHint($projectRoot);
+        if (! $config instanceof BoostConfig) {
             return self::FAILURE;
         }
 
@@ -199,7 +345,13 @@ final class SyncCommand extends Command
 
         $result = $this->invokeSyncEngine($projectRoot, $skills, $guidelines, checkOnly: true);
 
-        return $this->renderResult($result, checkOnly: true);
+        $exit = $this->renderResult($result, checkOnly: true);
+
+        if ($exit === self::SUCCESS) {
+            $this->reportBoostJsonRemoval($projectRoot, $config, dryRun: true, notTakenOver: $this->takeoverGap($skills, $guidelines, $result));
+        }
+
+        return $exit;
     }
 
     /**
@@ -227,121 +379,128 @@ final class SyncCommand extends Command
         );
     }
 
+    /**
+     * Render through boost-core's `SyncReporter` so this command and
+     * `vendor/bin/boost sync` describe one `SyncResult` identically — two
+     * entry points wording the same run differently is the divergence this
+     * package exists to prevent.
+     *
+     * The EXIT decision stays ours, but only for DRIFT. `PUBLIC_API.md`
+     * documents `0` for a `--dry-run` with pending changes, so `render()` (not
+     * `report()`) is the call and `driftIsFailure: false` keeps the wording
+     * neutral to match. Every other finding is a real failure: a conventions
+     * schema error or a leaked `boost:conv` token makes the reporter print a
+     * fatal error, and returning SUCCESS under it would contradict what the
+     * operator just read and let CI accept invalid emitted output.
+     *
+     * The per-file list is printed here only for a REAL sync: boost-core's
+     * report carries no write list of its own, but its drift branch does, so
+     * printing ours in check mode listed every planned path twice.
+     */
     private function renderResult(SyncResult $result, bool $checkOnly): int
     {
-        foreach ($result->writes as $written) {
-            $this->line("  <fg=green>{$written->action->value}</> {$written->relativePath}");
+        if (! $checkOnly) {
+            $this->renderWrites($result->writes);
         }
+
+        // Emitters are ours in both modes — the reporter's drift list covers
+        // writes only, so these are never duplicated.
 
         foreach ($result->emitters as $emitter) {
             $path = $emitter->relativePath ?? $emitter->fqcn;
             $this->line("  <fg=cyan>emitter:{$emitter->action->value}</> {$path}");
         }
 
-        // Surface boost-core's canonical delete-attribution warning. Helper
-        // returns null when nothing was deleted or in check-mode (which lists
-        // would-delete inline already), so the call is unconditional.
-        $attribution = $result->renderDeleteAttribution();
-        if ($attribution !== null) {
-            $this->newLine();
-            $this->warn($attribution);
-        }
+        $outcome = (new SyncReporter($this->commandInvocations(), driftIsFailure: false))
+            ->render($this->output, $result, $checkOnly, base_path());
 
-        $this->renderDiagnostics($result);
+        $fatal = $outcome->hasErrors || $outcome->hasConventionsError || $outcome->hasTokenLeak;
 
-        if ($result->hasErrors()) {
-            $this->newLine();
-            $this->error($checkOnly ? 'Errors during dry-run:' : 'Errors during sync:');
-            foreach ($result->errors as $err) {
-                $this->line("  - {$err}");
-            }
-
-            foreach ($result->emitters as $emitter) {
-                if ($emitter->action !== EmitterAction::ERRORED) {
-                    continue;
-                }
-
-                $this->line(sprintf('  - emitter %s (%s): %s', $emitter->fqcn, $emitter->vendor, $emitter->reason ?? 'no reason given'));
-            }
-
-            return self::FAILURE;
-        }
-
-        $this->newLine();
-        $this->line($this->renderSummary($result, $checkOnly));
-
-        return self::SUCCESS;
+        return $fatal ? self::FAILURE : self::SUCCESS;
     }
 
     /**
-     * rsync-style breakdown — "N writes" by itself counted every event
-     * (unchanged, skipped-symlink, would-*) which mislabelled idempotent
-     * runs as having written N files. Split per action so the headline
-     * count matches what actually changed on disk. Emitter counts are
-     * surfaced separately because `SyncResult::writes` excludes them.
+     * The per-file write list, with the `unchanged` paths collapsed.
+     *
+     * A full sync touches several hundred files and almost all of them are
+     * unchanged, so the individual lines bury the handful of `wrote` paths the
+     * operator actually needs to see. Every other action stays one line per
+     * path, in write order; the unchanged paths become one counted line per
+     * directory, printed after them.
+     *
+     * The count is over DISTINCT paths, and a path that got its own line under
+     * any other action is left out of it. Two agent targets can emit into one
+     * directory — `.agents/skills/` is written twice on a Claude + generic
+     * setup — so one path can appear twice in `$writes`: counting entries would
+     * report double the files that exist there, and a path written by the first
+     * target and unchanged for the second would be both listed as written and
+     * counted as unchanged in the same output.
+     *
+     * @param  list<WrittenFile>  $writes
      */
-    private function renderSummary(SyncResult $result, bool $checkOnly): string
+    private function renderWrites(array $writes): void
     {
-        $emitterWrote = $result->countEmittersByAction($checkOnly ? EmitterAction::WOULD_WRITE : EmitterAction::WROTE);
-        $emitterSuffix = $result->emitters === []
-            ? ''
-            : sprintf(' · emitters(%s=%d, unchanged=%d, skipped=%d)',
-                $checkOnly ? 'would-write' : 'wrote',
-                $emitterWrote,
-                $result->countEmittersByAction(EmitterAction::UNCHANGED),
-                $result->countEmittersByAction(EmitterAction::SKIPPED) + $result->countEmittersByAction(EmitterAction::DISABLED),
-            );
+        /** @var array<string, array<string, true>> $unchanged */
+        $unchanged = [];
+        /** @var array<string, true> $listed */
+        $listed = [];
 
-        if ($checkOnly) {
-            return sprintf(
-                '<fg=gray>Plan · would-write=%d · would-delete=%d · unchanged=%d · skipped-symlink=%d (%d skill/guideline events)%s</>',
-                $result->countByAction(WriteAction::WOULD_WRITE),
-                $result->countByAction(WriteAction::WOULD_DELETE),
-                $result->countByAction(WriteAction::UNCHANGED),
-                $result->countByAction(WriteAction::SKIPPED_SYMLINK),
-                count($result->writes),
-                $emitterSuffix,
-            );
+        foreach ($writes as $written) {
+            if ($written->action !== WriteAction::UNCHANGED) {
+                $this->line("  <fg=green>{$written->action->value}</> {$written->relativePath}");
+                $listed[$written->relativePath] = true;
+
+                continue;
+            }
+
+            $unchanged[$this->writeGroup($written->relativePath)][$written->relativePath] = true;
         }
 
-        return sprintf(
-            '<fg=gray>Sync complete · wrote=%d · deleted=%d · unchanged=%d · skipped-symlink=%d (%d skill/guideline events)%s</>',
-            $result->countByAction(WriteAction::WROTE),
-            $result->countByAction(WriteAction::DELETED),
-            $result->countByAction(WriteAction::UNCHANGED),
-            $result->countByAction(WriteAction::SKIPPED_SYMLINK),
-            count($result->writes),
-            $emitterSuffix,
-        );
+        foreach ($unchanged as $group => $paths) {
+            $paths = array_diff_key($paths, $listed);
+
+            if ($paths === []) {
+                continue;
+            }
+
+            $this->line(sprintf('  <fg=green>unchanged</> %d file(s) in %s', count($paths), $group));
+        }
     }
 
     /**
-     * Mirror boost-core SyncCommand's `renderConventionsDiagnostics()` so
-     * artisan-wrapped sync output surfaces the same warning/info channel
-     * for parseable-divergence + schema diagnostics. Without this, operators
-     * see the re-render happen (`wrote CLAUDE.md`) but no explanation —
-     * the engine emits to `SyncResult::diagnostics`, which `renderResult()`
-     * silently dropped before 0.3.5.
+     * The label an unchanged path is counted under: the first two path segments
+     * (`.claude/skills`), the first one when the path is shallower, or a name
+     * for the project root when the file sits there (`CLAUDE.md` is emitted at
+     * the root, and its own filename would read as a directory).
      */
-    private function renderDiagnostics(SyncResult $result): void
+    private function writeGroup(string $relativePath): string
     {
-        if ($result->diagnostics === []) {
-            return;
-        }
+        $segments = explode('/', $relativePath);
 
-        $this->newLine();
-        $this->line('<fg=cyan>Diagnostics</>');
-        foreach ($result->diagnostics as $diagnostic) {
-            $glyph = match ($diagnostic->level) {
-                'error' => '<fg=red>✗</>',
-                'warning' => '<fg=yellow>⚠</>',
-                'info' => '<fg=cyan>ℹ</>',
-                default => ' ',
-            };
-            $slot = $diagnostic->slot === null ? '' : "{$diagnostic->slot}: ";
-            $vendor = $diagnostic->vendor === null ? '' : " ({$diagnostic->vendor})";
-            $this->line("  {$glyph} {$slot}{$diagnostic->message}{$vendor}");
-        }
+        return match (true) {
+            count($segments) === 1 => 'the project root',
+            count($segments) === 2 => $segments[0],
+            default => $segments[0] . '/' . $segments[1],
+        };
+    }
+
+    /**
+     * Where the report's follow-up advice should send an operator. Unmapped
+     * names fall back to `vendor/bin/boost <name>`, which in a wrapper project
+     * is the entry point that reports a materially thinner set — so `tags`
+     * maps to `project-boost:where`, this package's nearest equivalent, rather
+     * than being left to that fallback. The equivalent need not be a command of
+     * the same name; it only has to be the right thing to run.
+     *
+     * @return array<string, string>
+     */
+    private function commandInvocations(): array
+    {
+        return [
+            'sync' => 'php artisan project-boost:sync',
+            'tags' => 'php artisan project-boost:where',
+            'where' => 'php artisan project-boost:where',
+        ];
     }
 
     /**

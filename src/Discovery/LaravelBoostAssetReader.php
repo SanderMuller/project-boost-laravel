@@ -7,8 +7,10 @@ use SanderMuller\BoostCore\Skills\BoostTags;
 use SanderMuller\BoostCore\Skills\FrontmatterParser;
 use SanderMuller\BoostCore\Skills\Rendering\RenderContext;
 use SanderMuller\BoostCore\Skills\Skill;
+use SanderMuller\BoostCore\Skills\SkillAsset;
 use SplFileInfo;
 use Symfony\Component\Finder\Finder;
+use Symfony\Component\Finder\SplFileInfo as FinderFileInfo;
 use Throwable;
 
 /**
@@ -21,6 +23,11 @@ use Throwable;
  *    which delegates to laravel/boost's RendersBladeGuidelines trait so the
  *    `$assist = GuidelineAssist` runtime context exists.
  *  - Frontmatter is parsed from the rendered (or raw, for .md) content.
+ *  - Companion files next to the entry file (`rules/*.md`,
+ *    `references/*.blade.php`, …) become `SkillAsset`s through the same
+ *    render dispatch, so laravel/boost's routing tables resolve. A rendered
+ *    Blade asset is emitted with its extension rewritten to `.md`, because
+ *    the entry body links `rules/foo.md`, not `rules/foo.blade.php`.
  *  - Tags are layered: frontmatter `metadata.boost-tags` wins; otherwise the
  *    sidecar manifest fills in.
  *
@@ -31,7 +38,13 @@ use Throwable;
  *
  * Render failures are recorded in `$renderErrors` (out-param) and the
  * offending skill is skipped, mirroring boost-core's lenient default.
+ * A failing ASSET drops only that asset — the entry rendered fine, so the
+ * skill still ships (minus the file that would have been half-rendered).
  * Callers can promote to strict by checking the out-param themselves.
+ *
+ * Blade files skipped for want of a renderer are counted in
+ * `skippedBladeAssets()` so `project-boost:sync` can report them instead of
+ * dropping them silently.
  *
  * @internal
  */
@@ -39,6 +52,8 @@ final class LaravelBoostAssetReader
 {
     /** @var list<string> */
     private array $renderErrors = [];
+
+    private int $skippedBladeAssets = 0;
 
     public function __construct(
         private readonly string $laravelBoostAiRoot,
@@ -53,6 +68,7 @@ final class LaravelBoostAssetReader
     public function readSkills(): array
     {
         $this->renderErrors = [];
+        $this->skippedBladeAssets = 0;
 
         if (! is_dir($this->laravelBoostAiRoot)) {
             return [];
@@ -86,6 +102,15 @@ final class LaravelBoostAssetReader
     public function renderErrors(): array
     {
         return $this->renderErrors;
+    }
+
+    /**
+     * How many Blade companion files were dropped because no renderer is
+     * wired. Non-zero means an emitted skill links files that will not exist.
+     */
+    public function skippedBladeAssets(): int
+    {
+        return $this->skippedBladeAssets;
     }
 
     private function buildSkill(SplFileInfo $file): ?Skill
@@ -148,7 +173,112 @@ final class LaravelBoostAssetReader
             sourceVendor: 'laravel/boost',
             tags: $tags,
             tagsValid: $tagsValid,
+            assets: $this->collectAssets($file),
         );
+    }
+
+    /**
+     * Every non-entry file under the skill directory, rendered through the same
+     * dispatch as the entry file.
+     *
+     * {@see SkillAssetScope} owns which files qualify and where each one is
+     * emitted.
+     *
+     * @return list<SkillAsset>
+     */
+    private function collectAssets(SplFileInfo $entry): array
+    {
+        $skillDir = dirname($entry->getPathname());
+        if (! is_dir($skillDir)) {
+            return [];
+        }
+
+        // sortByName() for the same cross-OS determinism reason as the entry
+        // walker above — asset order reaches SyncEngine as emit order.
+        $finder = (new Finder())
+            ->files()
+            ->in($skillDir)
+            ->ignoreDotFiles(true)
+            ->filter(SkillAssetScope::isAsset(...))
+            ->sortByName();
+
+        $assets = [];
+        $claimed = [];
+        foreach ($finder as $file) {
+            $asset = $this->buildAsset($file);
+            if (! $asset instanceof SkillAsset) {
+                continue;
+            }
+
+            // The `.blade.php` → `.md` rewrite can make two sources claim one
+            // emit path (`rules/a.md` beside `rules/a.blade.php`). laravel/boost
+            // ships no such pair, and a silent last-write-wins would be the
+            // wrong answer if it ever did — so drop the second and say so.
+            if (isset($claimed[$asset->relativePath])) {
+                $this->renderErrors[] = sprintf(
+                    'laravel/boost skill asset collision (`%s`): two sources claim `%s`.',
+                    $file->getPathname(),
+                    $asset->relativePath,
+                );
+
+                continue;
+            }
+
+            $claimed[$asset->relativePath] = true;
+            $assets[] = $asset;
+        }
+
+        return $assets;
+    }
+
+    private function buildAsset(FinderFileInfo $file): ?SkillAsset
+    {
+        $relativePath = SkillAssetScope::emitRelativePath($file);
+
+        $raw = @file_get_contents($file->getPathname());
+        if ($raw === false) {
+            // Vanished between enumeration and read, or unreadable. Emitting
+            // `(string) false` would write an EMPTY asset over valid content
+            // from a previous sync, so skip the file and say why.
+            $this->renderErrors[] = sprintf(
+                'laravel/boost skill asset unreadable (`%s`): skipped.',
+                $file->getPathname(),
+            );
+
+            return null;
+        }
+
+        if (! str_ends_with($file->getFilename(), '.blade.php')) {
+            return new SkillAsset(relativePath: $relativePath, contents: $raw);
+        }
+
+        if (! $this->bladeRenderer instanceof SkillRenderer) {
+            ++$this->skippedBladeAssets;
+
+            return null;
+        }
+
+        try {
+            // The whole rendered string is the asset — an asset is a plain
+            // companion file, not a skill, so no frontmatter/body split. The
+            // frontmatter is still pre-parsed for the RenderContext, matching
+            // the entry path.
+            $contents = $this->bladeRenderer->render($raw, new RenderContext(
+                sourcePath: $file->getPathname(),
+                sourceVendor: 'laravel/boost',
+                frontmatter: $this->frontmatter->parse($raw)->frontmatter,
+            ));
+        } catch (Throwable $throwable) {
+            $this->renderErrors[] = sprintf(
+                'laravel/boost skill asset render failed (`%s`): %s',
+                $file->getPathname(),
+                $throwable->getMessage(),
+            );
+
+            return null;
+        }
+
+        return new SkillAsset(relativePath: $relativePath, contents: $contents);
     }
 
     /**

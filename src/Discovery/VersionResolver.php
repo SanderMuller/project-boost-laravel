@@ -2,8 +2,9 @@
 
 namespace SanderMuller\ProjectBoostLaravel\Discovery;
 
-use Laravel\Roster\Enums\Packages;
-use Laravel\Roster\Roster;
+use Laravel\Boost\Support\PackageRegistry;
+use Laravel\Roster\Package;
+use Laravel\Roster\ProjectScan;
 use SanderMuller\BoostCore\Skills\Skill;
 
 /**
@@ -14,16 +15,17 @@ use SanderMuller\BoostCore\Skills\Skill;
  * `livewire/3`.
  *
  * Resolution strategy, in order:
- *  1. If `laravel/roster` is available AND the package directory name
- *     maps to a `Laravel\Roster\Enums\Packages` case AND the host has
- *     the package installed, pick the variant whose major matches the
- *     host's `majorVersion()`. Deterministic; matches the host's
- *     actual installed package.
- *  2. Otherwise (Roster missing, package not in the Roster enum, host
- *     doesn't have the package, no variant matches the detected major),
- *     fall back to the previous lex-last `sourcePath` proxy. Picks
- *     `pest/4` over `pest/3` correctly today but flips at `pest/10` —
- *     known limitation, only triggered when Roster can't resolve.
+ *  1. If `laravel/roster` is available AND the host has an installed
+ *     package whose guideline dir matches the variants' `<package>`
+ *     path segment, pick the variant whose major matches that package's
+ *     `major()`. Deterministic; matches the host's actual installed
+ *     package.
+ *  2. Otherwise (Roster missing, host doesn't have the package, package
+ *     resolved without a version, no variant matches the detected
+ *     major), fall back to the previous lex-last `sourcePath` proxy.
+ *     Picks `pest/4` over `pest/3` correctly today but flips at
+ *     `pest/10` — known limitation, only triggered when Roster can't
+ *     resolve.
  *
  * Skills without a per-major path segment (`.ai/folio/skill/...`) are
  * returned as-is — there's nothing to dedupe.
@@ -33,7 +35,7 @@ use SanderMuller\BoostCore\Skills\Skill;
 final readonly class VersionResolver
 {
     public function __construct(
-        private ?Roster $roster = null,
+        private ?ProjectScan $scan = null,
     ) {}
 
     /**
@@ -51,69 +53,111 @@ final readonly class VersionResolver
 
         $resolved = [];
         foreach ($byName as $variants) {
-            $resolved[] = count($variants) === 1
-                ? $variants[0]
-                : $this->pickBest($variants);
+            if (count($variants) === 1) {
+                $resolved[] = $variants[0];
+
+                continue;
+            }
+
+            $chosen = $this->pickSourcePath(array_map(
+                static fn (Skill $variant): string => $variant->sourcePath,
+                $variants,
+            ));
+
+            foreach ($variants as $variant) {
+                if ($variant->sourcePath === $chosen) {
+                    $resolved[] = $variant;
+
+                    break;
+                }
+            }
         }
 
         return $resolved;
     }
 
     /**
-     * @param  list<Skill>  $variants
+     * Pick one variant's `SKILL.*` source path out of the several that share a
+     * skill name — the same choice {@see resolve()} makes, reachable without a
+     * `Skill` to wrap it.
+     *
+     * `BoostWrapper` needs exactly this in boost-core's bare-CLI cleanup pass:
+     * it must claim the emit paths of the variant the sync ACTUALLY ships, and
+     * it has only file paths there, no booted app to build skills with.
+     *
+     * @param  list<string>  $sourcePaths
      */
-    private function pickBest(array $variants): Skill
+    public function pickSourcePath(array $sourcePaths): string
     {
-        $hostMajor = $this->lookupHostMajor($variants);
+        $hostMajor = $this->lookupHostMajor($sourcePaths);
         if ($hostMajor !== null) {
-            foreach ($variants as $variant) {
-                if ($this->extractMajor($this->normalize($variant->sourcePath)) === $hostMajor) {
-                    return $variant;
+            foreach ($sourcePaths as $sourcePath) {
+                if ($this->extractMajor($sourcePath) === $hostMajor) {
+                    return $sourcePath;
                 }
             }
         }
 
-        usort($variants, static fn (Skill $a, Skill $b): int => strcmp($a->sourcePath, $b->sourcePath));
+        usort($sourcePaths, strcmp(...));
 
-        /** @var Skill $last */
-        $last = end($variants);
+        /** @var string $last */
+        $last = end($sourcePaths);
 
         return $last;
     }
 
     /**
-     * @param  list<Skill>  $variants
+     * @param  list<string>  $sourcePaths
      */
-    private function lookupHostMajor(array $variants): ?string
+    private function lookupHostMajor(array $sourcePaths): ?string
     {
-        if (! $this->roster instanceof Roster) {
+        if (! $this->scan instanceof ProjectScan) {
             return null;
         }
 
-        $packageName = $this->detectPackageGroup($variants);
-        if ($packageName === null) {
+        $guidelineDir = $this->detectPackageGroup($sourcePaths);
+        if ($guidelineDir === null) {
             return null;
         }
 
-        $packageEnum = Packages::tryFrom($packageName);
-        if ($packageEnum === null) {
-            return null;
+        $major = $this->findByGuidelineDir($this->scan, $guidelineDir)?->major();
+
+        return $major === null ? null : (string) $major;
+    }
+
+    /**
+     * Find the host's installed package whose guideline dir is `$guidelineDir`.
+     *
+     * Nothing upstream inverts `PackageRegistry::guidelineName()` (composer
+     * name → dir) — `rosterName()` yields `PEST`, not `pestphp/pest` — so this
+     * maps each installed package FORWARD through `guidelineName()` rather
+     * than looking one up by name. Both ecosystems are searched, php first:
+     * `.ai/` carries js-package dirs too (`inertia-react`, `tailwindcss`).
+     */
+    private function findByGuidelineDir(ProjectScan $scan, string $guidelineDir): ?Package
+    {
+        $packages = $scan->php()->packages()->concat($scan->js()->packages());
+
+        foreach ($packages as $package) {
+            if (PackageRegistry::guidelineName($package->name()) === $guidelineDir) {
+                return $package;
+            }
         }
 
-        return $this->roster->package($packageEnum)?->majorVersion();
+        return null;
     }
 
     /**
      * Returns the shared package directory name if all variants live
      * under the same `<package>/<major>` segment, otherwise null.
      *
-     * @param  list<Skill>  $variants
+     * @param  list<string>  $sourcePaths
      */
-    private function detectPackageGroup(array $variants): ?string
+    private function detectPackageGroup(array $sourcePaths): ?string
     {
         $packages = [];
-        foreach ($variants as $variant) {
-            if (preg_match('#/\.ai/([^/]+)/\d+/skill/#', $this->normalize($variant->sourcePath), $matches) === 1) {
+        foreach ($sourcePaths as $sourcePath) {
+            if (preg_match('#/\.ai/([^/]+)/\d+/skill/#', $this->normalize($sourcePath), $matches) === 1) {
                 $packages[$matches[1]] = true;
             }
         }
