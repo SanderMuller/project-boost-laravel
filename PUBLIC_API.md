@@ -21,7 +21,7 @@ A class-only freeze misses most of this package's contract. These are frozen too
 The command names, their documented options, and the exit-code contract (`0` ok, `1` failure):
 
 - `project-boost:install` — `--no-sync`, `--no-interaction`
-- `project-boost:sync` — `--dry-run`, `--show-untagged`
+- `project-boost:sync` — `--dry-run`, `--show-untagged`, `--keep-boost-json` (added in 1.3)
 - `project-boost:where`
 - `project-boost:reconcile` — `--dry-run`, `--force`, `--no-sync` (added in 1.1)
 
@@ -36,6 +36,7 @@ Human-readable output text is NOT a contract.
 
 - The service provider FQCN `SanderMuller\ProjectBoostLaravel\ProjectBoostLaravelServiceProvider` (registered via `extra.laravel.providers`) — pinned for package discovery; not consumer-instantiated.
 - The wrapper class name/namespace `SanderMuller\ProjectBoostLaravel\BoostWrapper` implementing boost-core's `@api` `BoostWrapperContract` — boost-core discovers it by name (guarded by a reflection test). `@internal`, but its identity is pinned.
+- `composer.json`'s `extra.boost.entry-point` map (added in 1.4) — the commands a bare `vendor/bin/boost` should redirect to this package's artisan equivalents: `sync`, `where`, `install`. boost-core reads it as JSON, so it applies even when this package's own CLI cannot boot. The keys and their invocation strings are part of the surface.
 
 ### Tag sidecar manifest
 
@@ -44,10 +45,11 @@ Human-readable output text is NOT a contract.
 ### Behavior + mechanism
 
 - `project-boost:sync` reads laravel/boost's skills/guidelines from `vendor/laravel/boost/.ai/<pkg>/[<major>/]{skill,guideline}/…`, Blade-renders `.blade.php`, applies your `withTags()` filter, and injects them into boost-core via the **wrapper-injection** path (`BoostSync::sync(injectedVendorSkills:, injectedVendorGuidelines:)`) under the vendor key `laravel/boost`. It does **not** declare `extra.boost.*` skill/guideline paths and ships no skill set of its own.
+- An injected skill ships with the companion files laravel/boost stores beside its `SKILL.*` entry (`rules/`, `references/`, …), so the routing tables in the emitted `SKILL.md` resolve. A `.blade.php` companion is rendered and emitted as `.md`, under the same relative path.
 
 ## Internal (not covered by semver)
 
-Every class is `@internal` and may change in any release — do not import or extend: the three console command classes, `BoostWrapper`, the service provider, `Rendering\BladeRenderer`, `Discovery\*` (`LaravelBoostAssetReader`, `LaravelBoostGuidelineReader`, `LaravelBoostGuidelineGate`, `LaravelBoostTagManifest`, `VersionResolver`), `Listeners\EnforceMcpFlagOnBoostInstall`, and `Console\Concerns\LoadsBoostConfig`. A pest-arch test asserts every `src/` class is marked `@api` or `@internal` so the boundary can't erode.
+Every class is `@internal` and may change in any release — do not import or extend: the three console command classes, `BoostWrapper`, the service provider, `Rendering\BladeRenderer`, `Discovery\*` (`LaravelBoostAssetReader`, `LaravelBoostGuidelineReader`, `LaravelBoostGuidelineGate`, `LaravelBoostTagManifest`, `SkillAssetScope`, `VersionResolver`), `Rendering\InjectedSkillStatus`, `Listeners\EnforceMcpFlagOnBoostInstall`, and `Console\Concerns\LoadsBoostConfig`. A pest-arch test asserts every `src/` class is marked `@api` or `@internal` so the boundary can't erode.
 
 ## Stability policy
 
