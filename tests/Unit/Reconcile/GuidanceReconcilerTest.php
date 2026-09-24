@@ -260,7 +260,8 @@ it('keeps a legacy CLAUDE.md on capture, and replaces it with an @AGENTS.md impo
         ->and((string) file_get_contents((string) $result->capturedGuidelinePath))->toContain('Legacy notes');
 
     // No AGENTS.md yet: an import would point at nothing, so the file stays.
-    expect($reconciler->retireLegacyFiles($plan, $result, $backupDir, $root))->toBe([])
+    expect($reconciler->retireLegacyFiles($plan, $result, $backupDir, $root))
+        ->toBeEmpty()
         ->and(file_get_contents($root . '/CLAUDE.md'))->toBe($original);
 
     file_put_contents($root . '/AGENTS.md', "# Synced\n");
@@ -278,7 +279,8 @@ it('does not replace a legacy CLAUDE.md that has no backup', function () use (&$
     $reconciler = new GuidanceReconciler();
     $plan = $reconciler->analyze(reconcileConfig($root, [Agent::CLAUDE_CODE]), $root);
 
-    expect($reconciler->retireLegacyFiles($plan, new CaptureResult([], null), $root . '/.boost-reconcile', $root))->toBe([])
+    expect($reconciler->retireLegacyFiles($plan, new CaptureResult([], null), $root . '/.boost-reconcile', $root))
+        ->toBeEmpty()
         ->and(file_get_contents($root . '/CLAUDE.md'))->toBe($original);
 });
 
@@ -332,7 +334,8 @@ it('does not report a legacy CLAUDE.md as replaced when it cannot be written', f
     chmod($root . '/CLAUDE.md', 0o444);
 
     try {
-        expect($reconciler->retireLegacyFiles($plan, $result, $backupDir, $root))->toBe([]);
+        expect($reconciler->retireLegacyFiles($plan, $result, $backupDir, $root))
+            ->toBeEmpty();
     } finally {
         chmod($root . '/CLAUDE.md', 0o644);
     }
