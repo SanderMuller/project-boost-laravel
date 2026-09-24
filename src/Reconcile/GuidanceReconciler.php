@@ -8,7 +8,7 @@ use SanderMuller\BoostCore\Enums\Agent;
 /**
  * The engine behind `project-boost:reconcile` — a diff-first guided takeover
  * for projects where laravel/boost's `boost:install` seeded guidelines DIRECTLY
- * into the agent guidance files (`CLAUDE.md` / `AGENTS.md` / `GEMINI.md` / …)
+ * into the agent guidance files (`AGENTS.md` / `GEMINI.md` / a legacy `CLAUDE.md` / …)
  * inside `<laravel-boost-guidelines>` markers, and a subsequent markerless
  * boost-core sync would wholesale-overwrite them.
  *
@@ -22,6 +22,14 @@ use SanderMuller\BoostCore\Enums\Agent;
  *    every at-risk file verbatim, and write the deduplicated hand-authored
  *    residual into `.ai/guidelines/` so boost-core re-composes it into every
  *    agent file on the next `project-boost:sync`.
+ *
+ * **The legacy `CLAUDE.md`.** boost-core 1.12 writes Claude Code guidance to
+ * `AGENTS.md`, and so does laravel/boost from v2.10. laravel/boost before v2.10
+ * still seeds its marker block into `CLAUDE.md`. No sync touches that file any
+ * more, but while it exists Claude Code reads it and skips `AGENTS.md`. So when
+ * Claude Code is active, a marker-carrying `CLAUDE.md` is analyzed too.
+ * {@see retireLegacyFiles()} replaces it with an `@AGENTS.md` import once the
+ * backup exists and a sync wrote `AGENTS.md`.
  *
  * **Why the marker split, not a content diff.** A precise on-disk-vs-would-write
  * diff needs boost-core's assembled-guidance text, which is produced by
@@ -44,10 +52,17 @@ final class GuidanceReconciler
     /**
      * The `.ai/guidelines/` filename the captured residual lands in. A single
      * deduplicated file (not per-agent) — guidelines are cross-agent by design,
-     * and identical hand-edits across `CLAUDE.md` / `AGENTS.md` should not
+     * and identical hand-edits across `AGENTS.md` / `GEMINI.md` should not
      * produce duplicate guidance.
      */
     private const string CAPTURE_FILENAME = 'reconciled.md';
+
+    /**
+     * Where laravel/boost before v2.10 seeded its Claude Code guidelines.
+     */
+    private const string LEGACY_CLAUDE_FILE = 'CLAUDE.md';
+
+    private const string LEGACY_IMPORT_PATTERN = '/^[ \t]*@(?:\.\/)?AGENTS\.md[ \t]*\r?$/m';
 
     public function analyze(BoostConfig $config, string $projectRoot): ReconcilePlan
     {
@@ -55,7 +70,10 @@ final class GuidanceReconciler
 
         /** @var array<string, list<Agent>> $byPath */
         $byPath = [];
+        $claudeCodeActive = false;
         foreach ($config->agents as $agent) {
+            $claudeCodeActive = $claudeCodeActive || $agent === Agent::CLAUDE_CODE;
+
             $relative = $agent->target()->guidelinesFileRelative();
             if ($relative === null) {
                 continue;
@@ -67,6 +85,19 @@ final class GuidanceReconciler
         $files = [];
         foreach ($byPath as $relative => $agents) {
             $files[] = $this->analyzeFile($relative, $root . '/' . $relative, $agents);
+        }
+
+        $legacyPath = $root . '/' . self::LEGACY_CLAUDE_FILE;
+
+        // laravel/boost never seeds a symlink, and retireLegacyFiles() must not write through one.
+        if ($claudeCodeActive && ! isset($byPath[self::LEGACY_CLAUDE_FILE]) && ! is_link($legacyPath)) {
+            $legacy = $this->analyzeFile(self::LEGACY_CLAUDE_FILE, $legacyPath, [Agent::CLAUDE_CODE], legacy: true);
+
+            // A hand-written CLAUDE.md is not reconcile's business; only a
+            // laravel/boost-seeded one is.
+            if ($legacy->isAtRisk()) {
+                $files[] = $legacy;
+            }
         }
 
         return new ReconcilePlan($files);
@@ -90,8 +121,9 @@ final class GuidanceReconciler
         foreach ($plan->atRiskFiles() as $file) {
             $backupPath = rtrim($backupDir, '/') . '/' . $file->relativePath;
             $this->ensureDirectory(dirname($backupPath));
-            copy($file->absolutePath, $backupPath);
-            $backups[] = $backupPath;
+            if (copy($file->absolutePath, $backupPath)) {
+                $backups[] = $backupPath;
+            }
 
             if ($file->residual !== null && $file->residual !== '') {
                 $uniqueResiduals[$file->residual] = true;
@@ -118,18 +150,47 @@ final class GuidanceReconciler
     }
 
     /**
+     * Replace each legacy `CLAUDE.md` with an import of Claude Code's current
+     * guidance file, so Claude Code reads the synced guidance. Call it after a
+     * successful sync. A file without a backup from {@see capture()}, whose
+     * import target does not exist yet, or that cannot be written, stays as it is.
+     *
+     * @return list<string> the relative paths that were replaced
+     */
+    public function retireLegacyFiles(ReconcilePlan $plan, CaptureResult $capture, string $backupDir, string $projectRoot): array
+    {
+        $target = Agent::CLAUDE_CODE->target()->guidelinesFileRelative();
+        if ($target === null || ! is_file(rtrim($projectRoot, '/') . '/' . $target)) {
+            return [];
+        }
+
+        $retired = [];
+        foreach ($plan->atRiskFiles() as $file) {
+            if (! $file->legacy || ! in_array(rtrim($backupDir, '/') . '/' . $file->relativePath, $capture->backups, true)) {
+                continue;
+            }
+
+            if (@file_put_contents($file->absolutePath, '@' . $target . "\n") !== false) {
+                $retired[] = $file->relativePath;
+            }
+        }
+
+        return $retired;
+    }
+
+    /**
      * @param  list<Agent>  $agents
      */
-    private function analyzeFile(string $relative, string $absolute, array $agents): GuidanceFileAnalysis
+    private function analyzeFile(string $relative, string $absolute, array $agents, bool $legacy = false): GuidanceFileAnalysis
     {
         if (! is_file($absolute)) {
-            return new GuidanceFileAnalysis($relative, $absolute, ReconcileStatus::ABSENT, null, null, $agents);
+            return new GuidanceFileAnalysis($relative, $absolute, ReconcileStatus::ABSENT, null, null, $agents, $legacy);
         }
 
         $content = (string) file_get_contents($absolute);
 
         if (! str_contains($content, self::MARKER_OPEN)) {
-            return new GuidanceFileAnalysis($relative, $absolute, ReconcileStatus::CLEAN, null, null, $agents);
+            return new GuidanceFileAnalysis($relative, $absolute, ReconcileStatus::CLEAN, null, null, $agents, $legacy);
         }
 
         $markerBody = null;
@@ -141,7 +202,15 @@ final class GuidanceReconciler
         // unterminated marker (open without close) won't match the pattern, so
         // preg_replace is a no-op and the whole file is treated as residual —
         // safely over-capturing rather than dropping content.
-        $residual = trim((string) preg_replace(self::MARKER_PATTERN, '', $content));
+        $residual = (string) preg_replace(self::MARKER_PATTERN, '', $content);
+
+        // An existing `@AGENTS.md` line in the legacy file is not guidance.
+        // Captured, it would make AGENTS.md import itself.
+        if ($legacy) {
+            $residual = (string) preg_replace(self::LEGACY_IMPORT_PATTERN, '', $residual);
+        }
+
+        $residual = trim($residual);
 
         $status = $residual === ''
             ? ReconcileStatus::FOREIGN_SEEDED
@@ -154,6 +223,7 @@ final class GuidanceReconciler
             $markerBody,
             $residual === '' ? null : $residual,
             $agents,
+            $legacy,
         );
     }
 

@@ -62,7 +62,7 @@ final class LaravelBoostGuidelineReader
         // not guidelines).
         // sortByName() pins lexicographic order — Symfony Finder otherwise
         // yields in OS filesystem-iteration order (APFS hash order vs ext4
-        // readdir order), so guidelines would concatenate into CLAUDE.md in a
+        // readdir order), so guidelines would concatenate into AGENTS.md in a
         // different order per OS and produce content-free reorder churn across
         // macOS/Linux dev machines and CI.
         $finder = (new Finder())

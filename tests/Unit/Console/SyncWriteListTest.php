@@ -65,7 +65,7 @@ test('one directory gets one line and repeated paths are counted once', function
 
 test('a file at the project root is named, not read as a directory', function (): void {
     $output = renderSyncWriteList([
-        syncWritten('CLAUDE.md', WriteAction::UNCHANGED),
+        syncWritten('AGENTS.md', WriteAction::UNCHANGED),
     ]);
 
     expect($output)->toContain('unchanged 1 file(s) in the project root');

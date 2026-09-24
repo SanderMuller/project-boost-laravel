@@ -52,7 +52,7 @@ Docker need no extra flags.
 
 > [!WARNING]
 > Running `php artisan boost:install` **without** `--mcp` fires `laravel/boost`'s
-> own guideline and skill writers, which then race this package over `CLAUDE.md`
+> own guideline and skill writers, which then race this package over `AGENTS.md`
 > and the per-agent skill directories. Always go through `project-boost:install`.
 
 Already have hand-edited agent files? Run `php artisan project-boost:reconcile`

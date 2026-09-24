@@ -13,7 +13,7 @@ use SanderMuller\ProjectBoostLaravel\Reconcile\ReconcileStatus;
 /**
  * `project-boost:reconcile` — a diff-first guided takeover for projects where
  * laravel/boost's `boost:install` seeded guidelines directly into the agent
- * guidance files (`CLAUDE.md` / `AGENTS.md` / `GEMINI.md` / …), which a
+ * guidance files (`AGENTS.md` / `GEMINI.md` / a legacy `CLAUDE.md` / …), which a
  * markerless boost-core sync would wholesale-overwrite.
  *
  * Flow: detect laravel/boost-seeded guidance → show what is at risk → CAPTURE
@@ -78,7 +78,8 @@ final class ReconcileCommand extends Command
             return self::SUCCESS;
         }
 
-        $result = $reconciler->capture($plan, $config, $projectRoot . '/.boost-reconcile');
+        $backupDir = $projectRoot . '/.boost-reconcile';
+        $result = $reconciler->capture($plan, $config, $backupDir);
 
         $this->newLine();
         $this->info(sprintf('Backed up %d at-risk file(s) verbatim to .boost-reconcile/.', count($result->backups)));
@@ -95,6 +96,9 @@ final class ReconcileCommand extends Command
         if ((bool) $this->option('no-sync')) {
             $this->newLine();
             $this->line('<fg=gray>Skipped project-boost:sync (--no-sync). Run it when ready.</>');
+            if ($this->hasLegacyFile($plan)) {
+                $this->line('<fg=gray>CLAUDE.md stays as it is until a sync writes AGENTS.md. Run project-boost:reconcile again after that sync to replace it.</>');
+            }
 
             return self::SUCCESS;
         }
@@ -102,7 +106,27 @@ final class ReconcileCommand extends Command
         $this->newLine();
         $this->info('Running project-boost:sync to re-derive guidance (now including the captured content)…');
 
-        return $this->call('project-boost:sync');
+        $exit = $this->call('project-boost:sync');
+        if ($exit !== self::SUCCESS) {
+            return $exit;
+        }
+
+        $retired = $reconciler->retireLegacyFiles($plan, $result, $backupDir, $projectRoot);
+        foreach ($plan->atRiskFiles() as $file) {
+            if (! $file->legacy) {
+                continue;
+            }
+
+            if (in_array($file->relativePath, $retired, true)) {
+                $this->line(sprintf('Replaced <fg=cyan>%s</> with an `@AGENTS.md` import. The original is in .boost-reconcile/.', $file->relativePath));
+
+                continue;
+            }
+
+            $this->warn(sprintf('Could not replace %s. Claude Code reads it instead of AGENTS.md until you add an `@AGENTS.md` line to it.', $file->relativePath));
+        }
+
+        return self::SUCCESS;
     }
 
     private function renderPlan(ReconcilePlan $plan): void
@@ -125,6 +149,20 @@ final class ReconcileCommand extends Command
         $this->line('  • back up each file verbatim to <fg=cyan>.boost-reconcile/</>');
         $this->line('  • capture hand-authored content (outside laravel/boost\'s marker) into <fg=cyan>.ai/guidelines/</> so sync re-derives it');
         $this->line('  • then run `project-boost:sync`');
+        if ($this->hasLegacyFile($plan)) {
+            $this->line('  • after the sync, replace the legacy <fg=cyan>CLAUDE.md</> with an `@AGENTS.md` import, so Claude Code reads the synced guidance');
+        }
+    }
+
+    private function hasLegacyFile(ReconcilePlan $plan): bool
+    {
+        foreach ($plan->atRiskFiles() as $file) {
+            if ($file->legacy) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function statusLabel(ReconcileStatus $status): string

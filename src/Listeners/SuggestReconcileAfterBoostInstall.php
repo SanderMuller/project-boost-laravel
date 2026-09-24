@@ -11,7 +11,7 @@ use SanderMuller\ProjectBoostLaravel\Console\InstallCommand;
  * `project-boost:reconcile`.
  *
  * laravel/boost's installer seeds its guidelines DIRECTLY into the agent
- * guidance files (`CLAUDE.md` / `AGENTS.md` / …) inside `<laravel-boost-guidelines>`
+ * guidance files (`AGENTS.md` / `CLAUDE.md` / …) inside `<laravel-boost-guidelines>`
  * markers. The canonical wrapper flow then re-derives that guidance through
  * `project-boost:sync` — but a markerless sync wholesale-overwrites the file, so
  * any operator hand-edits are lost unless captured first. `project-boost:reconcile`
@@ -61,7 +61,7 @@ final readonly class SuggestReconcileAfterBoostInstall
 
         $output = $event->output;
         $output->writeln('');
-        $output->writeln('  <fg=yellow>laravel/boost seeded its guidelines into your agent files (CLAUDE.md / AGENTS.md / …).</>');
+        $output->writeln('  <fg=yellow>laravel/boost seeded its guidelines into your agent files (AGENTS.md / CLAUDE.md / …).</>');
         $output->writeln('  If you have hand-edited those files, run <fg=cyan>php artisan project-boost:reconcile</> to capture');
         $output->writeln('  your edits before <fg=cyan>project-boost:sync</> — otherwise a markerless sync overwrites them.');
     }

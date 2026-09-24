@@ -15,7 +15,7 @@ final readonly class GuidanceFileAnalysis
 {
     /**
      * @param  string  $relativePath  guidance file path relative to the project
-     *   root (e.g. `CLAUDE.md`, `.github/copilot-instructions.md`).
+     *   root (e.g. `AGENTS.md`, `.github/copilot-instructions.md`).
      * @param  ?string  $markerBody  the trimmed content INSIDE the
      *   `<laravel-boost-guidelines>` block, or null when the file carries no
      *   marker. This is laravel/boost's bundled guidelines (sync re-derives it).
@@ -24,6 +24,9 @@ final readonly class GuidanceFileAnalysis
      *   the genuinely at-risk content.
      * @param  list<Agent>  $agents  the configured agents whose guidelines path
      *   resolves to this file (several agents can share one file, e.g. AGENTS.md).
+     * @param  bool  $legacy  true for the `CLAUDE.md` that laravel/boost before
+     *   v2.10 seeded for Claude Code. No sync writes it, and while it exists
+     *   Claude Code skips `AGENTS.md`.
      */
     public function __construct(
         public string $relativePath,
@@ -32,6 +35,7 @@ final readonly class GuidanceFileAnalysis
         public ?string $markerBody,
         public ?string $residual,
         public array $agents,
+        public bool $legacy = false,
     ) {}
 
     public function isAtRisk(): bool

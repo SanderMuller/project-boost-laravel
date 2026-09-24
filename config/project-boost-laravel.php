@@ -17,7 +17,7 @@ return [
     | (which always passes `--mcp`) don't need this — leave it false. The
     | flag is for defensive teams who want to harden against muscle-memory
     | `php artisan boost:install` calls that would otherwise re-engage
-    | laravel/boost's writers and race this package over CLAUDE.md / the
+    | laravel/boost's writers and race this package over AGENTS.md / the
     | per-agent skill dirs.
     |
     | Note: this does NOT suppress laravel/boost's integrations writers

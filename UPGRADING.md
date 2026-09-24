@@ -1,5 +1,31 @@
 # Upgrading
 
+## From 1.4 to 1.5
+
+### Changed
+
+- **Requires `sandermuller/boost-core ^1.12.1`** (was `^1.8.1`). boost-core
+  1.12 writes Claude Code guidance to `AGENTS.md`, not `CLAUDE.md`. Claude Code
+  reads `AGENTS.md` natively since v2.1.277.
+
+  ```bash
+  composer require --dev "sandermuller/project-boost-laravel:^1.5" -W
+  ```
+
+- **The first `project-boost:sync` after the update moves Claude Code guidance
+  to `AGENTS.md`.** A `CLAUDE.md` that boost wrote and you did not edit is
+  deleted. Commit the deletion together with the new or changed `AGENTS.md`.
+- **A `CLAUDE.md` that stays blocks `AGENTS.md`.** While a `CLAUDE.md`,
+  `.claude/CLAUDE.md` or `CLAUDE.local.md` exists, Claude Code reads it and
+  skips `AGENTS.md`. The sync warns about this. Add an `@AGENTS.md` line to the
+  file, or move its content into `.ai/guidelines/` and delete it.
+- **`project-boost:reconcile` also checks a legacy `CLAUDE.md`.** laravel/boost
+  before v2.10 seeded its guidelines into `CLAUDE.md`. When Claude Code is an
+  active agent and `CLAUDE.md` holds the `<laravel-boost-guidelines>` marker,
+  reconcile backs the file up and captures its hand-written content into
+  `.ai/guidelines/reconciled.md`. After a successful sync, it replaces the file
+  with one `@AGENTS.md` line.
+
 ## From 1.1 to 1.2
 
 ### Changed

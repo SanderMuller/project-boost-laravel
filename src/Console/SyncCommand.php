@@ -291,9 +291,10 @@ final class SyncCommand extends Command
 
     /**
      * Warn (but don't block — matching boost-core's warn-and-overwrite default)
-     * when an agent guidance file carries laravel/boost-seeded content this sync
-     * will wholesale-overwrite, pointing the operator at `project-boost:reconcile`
-     * to capture any hand-edits first.
+     * when an agent guidance file carries laravel/boost-seeded content, pointing
+     * the operator at `project-boost:reconcile` to capture any hand-edits first.
+     * This sync wholesale-overwrites a current guidance file. It leaves a legacy
+     * `CLAUDE.md` alone, but that file keeps Claude Code from reading `AGENTS.md`.
      */
     private function warnIfForeignSeeded(BoostConfig $config, string $projectRoot): void
     {
@@ -303,11 +304,16 @@ final class SyncCommand extends Command
         }
 
         $this->warn(sprintf(
-            '%d agent guidance file(s) carry laravel/boost-seeded content this sync overwrites:',
+            '%d agent guidance file(s) carry laravel/boost-seeded content:',
             count($atRisk),
         ));
         foreach ($atRisk as $file) {
-            $this->line('  • ' . $file->relativePath . ($file->hasResidual() ? ' <fg=yellow>(has hand-edits)</>' : ''));
+            $this->line(sprintf(
+                '  • %s — %s%s',
+                $file->relativePath,
+                $file->legacy ? 'Claude Code reads it instead of AGENTS.md' : 'this sync overwrites it',
+                $file->hasResidual() ? ' <fg=yellow>(has hand-edits)</>' : '',
+            ));
         }
 
         $this->line('Run `php artisan project-boost:reconcile` first to preserve hand-edits. Continuing…');
@@ -470,7 +476,7 @@ final class SyncCommand extends Command
     /**
      * The label an unchanged path is counted under: the first two path segments
      * (`.claude/skills`), the first one when the path is shallower, or a name
-     * for the project root when the file sits there (`CLAUDE.md` is emitted at
+     * for the project root when the file sits there (`AGENTS.md` is emitted at
      * the root, and its own filename would read as a directory).
      */
     private function writeGroup(string $relativePath): string

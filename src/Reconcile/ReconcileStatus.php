@@ -3,7 +3,7 @@
 namespace SanderMuller\ProjectBoostLaravel\Reconcile;
 
 /**
- * Classification of an agent-guidance file (`CLAUDE.md` / `AGENTS.md` /
+ * Classification of an agent-guidance file (`AGENTS.md` / `CLAUDE.md` /
  * `GEMINI.md` / …) for the `project-boost:reconcile` takeover.
  *
  * The only false-positive-free at-risk signal available without coupling to

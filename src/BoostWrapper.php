@@ -50,7 +50,7 @@ use Throwable;
  *    upgrades to Pest 4 would strand them there forever. So this resolves the
  *    variant through the same `VersionResolver` the sync uses.
  *
- * Guideline files (`CLAUDE.md` / `AGENTS.md` / `GEMINI.md`) are intentionally
+ * Guideline files (`AGENTS.md` / `GEMINI.md` / …) are intentionally
  * NOT returned — they use ManagedRegion + operator-tracking, not wholesale
  * replacement, so they're outside this contract's stale-cleanup surface.
  *

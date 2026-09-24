@@ -91,10 +91,10 @@ it('renders a host .ai/guidelines/*.blade.php instead of silently skipping it', 
 
     $this->artisan('project-boost:sync')->assertSuccessful();
 
-    // CLAUDE_CODE → CLAUDE.md. The host `.blade.php` guideline must render INTO
+    // CLAUDE_CODE → AGENTS.md. The host `.blade.php` guideline must render INTO
     // it. Without the auto-registered BladeRenderer, boost-core's GuidelineLoader
     // skips the unrenderable `.blade.php` and the marker never appears.
-    expect(file_get_contents(base_path('CLAUDE.md')))
+    expect(file_get_contents(base_path('AGENTS.md')))
         ->toContain('HOST_BLADE_GUIDELINE_MARKER');
 });
 
@@ -121,7 +121,7 @@ it('resolves config from .config/boost.php (canonical layout), not just root boo
 
     $this->artisan('project-boost:sync')->assertSuccessful();
 
-    expect(file_get_contents(base_path('CLAUDE.md')))
+    expect(file_get_contents(base_path('AGENTS.md')))
         ->toContain('CONFIG_LAYOUT_MARKER');
 });
 
@@ -372,7 +372,7 @@ it('keeps boost.json when a guidance file was skipped as a symlink', function ()
 
     $target = sys_get_temp_dir() . '/pbl-guidance-' . bin2hex(random_bytes(6)) . '.md';
     file_put_contents($target, "# Stale\n");
-    symlink($target, base_path('CLAUDE.md'));
+    symlink($target, base_path('AGENTS.md'));
 
     try {
         $this->artisan('project-boost:sync')
@@ -382,7 +382,7 @@ it('keeps boost.json when a guidance file was skipped as a symlink', function ()
         expect(file_exists(base_path('boost.json')))->toBeTrue()
             ->and(file_exists(base_path('.boost/boost.json.retired')))->toBeFalse();
     } finally {
-        @unlink(base_path('CLAUDE.md'));
+        @unlink(base_path('AGENTS.md'));
         @unlink($target);
     }
 });
@@ -541,7 +541,7 @@ it("carries laravel/boost's own core guideline into the assembled guidance", fun
 
     $this->artisan('project-boost:sync')->assertSuccessful();
 
-    expect(file_get_contents(base_path('CLAUDE.md')))
+    expect(file_get_contents(base_path('AGENTS.md')))
         ->toContain('# Laravel Boost')
         ->toContain('php artisan route:list');
 })->skip(fn (): bool => ! is_dir(laravelBoostAiRoot()), 'laravel/boost ships no .ai payload on a prefer-dist install.');

@@ -18,7 +18,7 @@ use Illuminate\Console\Events\CommandStarting;
  * laravel/boost's installer short-circuits its feature-selection step
  * (which gates the guideline + skill writers) when `--mcp` is set, so
  * forcing the flag achieves the same outcome the config comment
- * promises — `CLAUDE.md` / `.cursor/rules/*` / `.{agent}/skills/`
+ * promises — `AGENTS.md` / `.cursor/rules/*` / `.{agent}/skills/`
  * remain owned by this package's `project-boost:sync`.
  *
  * Off by default. Users who only ever invoke `project-boost:install`

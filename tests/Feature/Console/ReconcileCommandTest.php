@@ -37,7 +37,7 @@ afterEach(function () use (&$reconcileCwd): void {
 
 function cleanReconcileFixtures(): void
 {
-    foreach ([base_path('boost.php'), base_path('.config/boost.php'), base_path('CLAUDE.md')] as $file) {
+    foreach ([base_path('boost.php'), base_path('.config/boost.php'), base_path('CLAUDE.md'), base_path('AGENTS.md')] as $file) {
         if (file_exists($file)) {
             File::delete($file);
         }
@@ -50,6 +50,10 @@ function cleanReconcileFixtures(): void
     }
 }
 
+/**
+ * Seeds `CLAUDE.md`, where laravel/boost before v2.10 put its guidelines for
+ * Claude Code. boost-core 1.12+ writes Claude Code guidance to `AGENTS.md`.
+ */
 function seedForeignGuidance(): void
 {
     file_put_contents(base_path('CLAUDE.md'), <<<'MD'
@@ -96,6 +100,10 @@ it('captures residual + backs up the file, then can skip sync', function (): voi
     expect(file_exists(base_path('.boost-reconcile/CLAUDE.md')))->toBeTrue()
         ->and(file_get_contents(base_path('.boost-reconcile/CLAUDE.md')))->toContain('foundation rules');
 
+    // No sync ran, so the legacy CLAUDE.md stays readable.
+    expect(file_get_contents(base_path('CLAUDE.md')))->toContain('foundation rules')
+        ->and(Artisan::output())->toContain('Run project-boost:reconcile again after that sync');
+
     // Hand-authored residual captured for re-derivation; marker body excluded
     $captured = (string) file_get_contents(base_path('.ai/guidelines/reconciled.md'));
     expect($captured)->toContain('Team conventions')
@@ -111,12 +119,21 @@ it('end-to-end: captures, then sync regenerates guidance WITHOUT losing the hand
     // hand-edits. This is the data-loss-prevention guarantee end to end.
     $exit = Artisan::call('project-boost:reconcile', ['--force' => true]);
 
-    expect($exit)->toBe(0);
+    expect($exit)->toBe(0)
+        ->and(Artisan::output())->toContain('with an `@AGENTS.md` import');
 
-    $claude = (string) file_get_contents(base_path('CLAUDE.md'));
-    expect($claude)->toContain('Team conventions')                 // hand-edit survived the wholesale rewrite
-        ->and($claude)->toContain('value objects')
-        ->and($claude)->not->toContain('<laravel-boost-guidelines>'); // boost-owned now: markerless
+    $agents = (string) file_get_contents(base_path('AGENTS.md'));
+    expect($agents)->toContain('Team conventions')                 // hand-edit survived into the synced guidance
+        ->and($agents)->toContain('value objects')
+        ->and($agents)->not->toContain('<laravel-boost-guidelines>'); // boost-owned: markerless
+
+    // The legacy CLAUDE.md now imports AGENTS.md, so Claude Code reads the synced guidance.
+    expect(file_get_contents(base_path('CLAUDE.md')))->toBe("@AGENTS.md\n");
+
+    // The next sync has nothing to warn about: boost-core's shadow check stays quiet.
+    Artisan::call('project-boost:sync');
+    expect(Artisan::output())->not->toContain('but `CLAUDE.md` exists')
+        ->and(Artisan::output())->not->toContain('laravel/boost-seeded content');
 });
 
 it('project-boost:sync warns when guidance is foreign-seeded', function (): void {
@@ -127,6 +144,7 @@ it('project-boost:sync warns when guidance is foreign-seeded', function (): void
 
     expect($exit)->toBe(0)
         ->and($output)->toContain('laravel/boost-seeded content')
+        ->and($output)->toContain('Claude Code reads it instead of AGENTS.md')
         ->and($output)->toContain('project-boost:reconcile')
         ->and($output)->toContain('has hand-edits');
 });

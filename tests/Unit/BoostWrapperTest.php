@@ -138,7 +138,7 @@ test('silently skips an agent identifier boost-core does not know', function ():
     expect($paths)->toBe(['.claude/skills/pest-testing/SKILL.md']);
 });
 
-test('never returns guideline files (CLAUDE.md / AGENTS.md / GEMINI.md)', function (): void {
+test('never returns guideline files (AGENTS.md / GEMINI.md)', function (): void {
     $root = wrapperProjectRoot([
         'pest/pest-testing' => 'blade.php',
         'folio/folio-routing' => 'md',
