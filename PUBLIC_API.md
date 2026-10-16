@@ -30,6 +30,7 @@ Human-readable output text is NOT a contract.
 ### Config (`config/project-boost-laravel.php`)
 
 - `suppress_upstream_writers` (env `PROJECT_BOOST_SUPPRESS_UPSTREAM`) — opt-in `CommandStarting` guard that injects `--mcp` into ad-hoc `boost:install` calls. Default `false`.
+- `mcp` (env `PROJECT_BOOST_MCP`) — render laravel/boost's MCP tool guidance (Tools, `search-docs`, `record-rule`) during `project-boost:sync`. Default `true`.
 - `laravel_boost_ai_root` — override for laravel/boost's `.ai` root. Default `null` (auto-detect under `vendor/laravel/boost`).
 
 ### Discovery contracts

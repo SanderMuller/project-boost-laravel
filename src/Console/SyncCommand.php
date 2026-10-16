@@ -3,6 +3,8 @@
 namespace SanderMuller\ProjectBoostLaravel\Console;
 
 use Illuminate\Console\Command;
+use Laravel\Boost\Install\GuidelineAssist;
+use Laravel\Boost\Install\GuidelineConfig;
 use Laravel\Roster\ProjectScan;
 use SanderMuller\BoostCore\Config\BoostConfig;
 use SanderMuller\BoostCore\Skills\Guideline;
@@ -64,6 +66,8 @@ final class SyncCommand extends Command
 
     public function handle(): int
     {
+        $this->configureGuidelineAssist();
+
         $blade = new BladeRenderer();
         $manifestPath = dirname(__DIR__, 2) . '/resources/boost/laravel-boost-tags.yaml';
         $manifest = LaravelBoostTagManifest::fromFile($manifestPath);
@@ -141,6 +145,23 @@ final class SyncCommand extends Command
         }
 
         return $this->runSync($skills, $guidelines);
+    }
+
+    /**
+     * laravel/boost's templates gate sections on `$assist->hasMcpEnabled()` and
+     * `hasSkillsEnabled()`, which only its own installer sets. Mutate (not
+     * replace) the config to keep what an in-process `boost:install` set, and
+     * rebind it: outside local/debug laravel/boost binds no singleton, so each
+     * resolve would autowire a fresh default. Forget the assist so it rebuilds.
+     */
+    private function configureGuidelineAssist(): void
+    {
+        $guidelineConfig = resolve(GuidelineConfig::class);
+        $guidelineConfig->hasMcp = (bool) config('project-boost-laravel.mcp', true);
+        $guidelineConfig->hasSkills = true;
+
+        app()->instance(GuidelineConfig::class, $guidelineConfig);
+        app()->forgetInstance(GuidelineAssist::class);
     }
 
     /**

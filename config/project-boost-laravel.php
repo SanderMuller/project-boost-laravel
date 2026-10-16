@@ -29,6 +29,20 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Render laravel/boost's MCP tool guidance
+    |--------------------------------------------------------------------------
+    |
+    | laravel/boost's guidelines gate their Tools, search-docs and record-rule
+    | sections on whether the laravel-boost MCP server is in use. This package
+    | assumes it is (laravel/boost stays the MCP), so those sections render by
+    | default. Set to false when the agents do not run the laravel-boost MCP
+    | server, so the guidance does not point at tools they cannot call.
+    |
+    */
+    'mcp' => env('PROJECT_BOOST_MCP', true),
+
+    /*
+    |--------------------------------------------------------------------------
     | Laravel/boost asset root
     |--------------------------------------------------------------------------
     |

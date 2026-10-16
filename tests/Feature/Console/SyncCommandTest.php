@@ -571,3 +571,34 @@ it('reports a skill asset problem instead of emitting a skill with dead links', 
         ->expectsOutputToContain('asset collision')
         ->assertSuccessful();
 });
+
+it('renders laravel/boost guidelines with the MCP tool and skills sections enabled', function (): void {
+    // Regression: BladeRenderer resolves `$assist` from the container, whose
+    // GuidelineConfig defaults to hasMcp=false / hasSkills=false. Only
+    // laravel/boost's own installer sets those flags, so every
+    // `@if($assist->hasMcpEnabled())` section (Tools, search-docs) and the
+    // `@if($assist->hasSkillsEnabled())` "Skills Activation" section vanished.
+    config(['project-boost-laravel.laravel_boost_ai_root' => dirname(__DIR__, 3) . '/vendor/laravel/boost/.ai']);
+    writeSyncBoostPhp();
+
+    $this->artisan('project-boost:sync')->assertSuccessful();
+
+    expect(file_get_contents(base_path('AGENTS.md')))
+        ->toContain('search-docs')
+        ->toContain('Skills Activation');
+});
+
+it('omits the laravel/boost MCP tool sections when the mcp option is disabled', function (): void {
+    config([
+        'project-boost-laravel.laravel_boost_ai_root' => dirname(__DIR__, 3) . '/vendor/laravel/boost/.ai',
+        'project-boost-laravel.mcp' => false,
+    ]);
+    writeSyncBoostPhp();
+
+    $this->artisan('project-boost:sync')->assertSuccessful();
+
+    $agentsMd = (string) file_get_contents(base_path('AGENTS.md'));
+
+    expect($agentsMd)->toContain('# Laravel Boost')
+        ->and($agentsMd)->not->toContain('search-docs');
+});
