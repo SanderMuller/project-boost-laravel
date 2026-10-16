@@ -5,6 +5,20 @@ All notable changes to `sandermuller/project-boost-laravel` will be documented i
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0](https://github.com/sandermuller/project-boost-laravel/compare/1.5.0...1.6.0) - 2026-10-16
+
+<!-- verified-sha: 75cade7a86973d3ebab3acafbac482c7b9b3b8e4 -->
+### Added
+
+- Added the `mcp` config key (`PROJECT_BOOST_MCP`, default `true`) to leave out laravel/boost's MCP tool guidance.
+
+### Fixed
+
+- Fixed `project-boost:sync` leaving out laravel/boost's Tools, `search-docs` and `record-rule` guidance.
+- Fixed `project-boost:sync` leaving out laravel/boost's "Skills Activation" guideline section.
+
+**Full changelog:** https://github.com/SanderMuller/project-boost-laravel/compare/1.5.0...1.6.0
+
 ## [1.5.0](https://github.com/sandermuller/project-boost-laravel/compare/1.4.1...1.5.0) - 2026-09-24
 
 <!-- verified-sha: 99fd9ba30254db65c0802d2a28dbe6ebae0bd243 -->
@@ -39,6 +53,7 @@ Claude Code guidance moves from `CLAUDE.md` to `AGENTS.md`. This release require
   unchanged 107 file(s) in .claude/skills
   unchanged 19 file(s) in .claude/agents
   unchanged 3 file(s) in .claude/commands
+  
   
   
   ```
@@ -95,6 +110,7 @@ composer update sandermuller/project-boost-laravel
 
 
 
+
 ```
 ### Fixed
 
@@ -120,6 +136,7 @@ Reported from production dogfood while installing the package into a downstream 
 
 ```bash
 composer require --dev "sandermuller/project-boost-laravel:^1.3" -W
+
 
 
 
@@ -153,6 +170,7 @@ Restores compatibility with `laravel/roster 1.0.0`, whose API rewrite made every
 
 ```bash
 composer require --dev "sandermuller/project-boost-laravel:^1.2" -W
+
 
 
 
@@ -285,6 +303,7 @@ Adopts the boost-core `0.23` line and locks the package's `@api`/`@internal` sur
   
   
   
+  
   ```
   If you require any boost package directly, move them to the `0.23` line together. Running against `boost-core < 0.23` no longer resolves.
   
@@ -333,6 +352,7 @@ Adopts the boost-core `0.22` line and moves every sync-driving and wrapper code 
   
   ```bash
   composer require "sandermuller/project-boost-laravel:^0.9"
+  
   
   
   
@@ -429,6 +449,7 @@ composer require sandermuller/boost-core:^0.16
 
 
 
+
 ```
 **Why ^0.16 specifically.** boost-skills 2.0 migrated its skills to render-time conventions tokens. Its Jira skills inline a `mcp.jira` sub-key conventions token that only resolves on boost-core 0.16 — on 0.15 the resolver short-circuits the open-vocab schema leaf and emits the token raw (broken skill body). So a project on boost-skills 2.0 needs boost-core 0.16 at render time; aligning this package's floor to `^0.16` keeps the two in lockstep and avoids a resolution conflict (boost-skills 2.0 declares its own direct `boost-core ^0.16`).
 
@@ -444,6 +465,7 @@ Not consumer-facing, but for contributors: `sandermuller/boost-skills` `^1.9 →
 composer require sandermuller/boost-core:^0.16   # or just composer update if tracked transitively
 composer update sandermuller/project-boost-laravel sandermuller/boost-core
 php artisan project-boost:sync
+
 
 
 
@@ -514,6 +536,7 @@ composer require sandermuller/boost-core:^0.14
 
 
 
+
 ```
 (Consumers who track boost-core transitively through this package get it on a `composer update --with-all-dependencies` — no explicit require needed.)
 
@@ -542,6 +565,7 @@ Crosses the package to **`boost-core ^0.13`** (floor bump — adopters must move
 
 ```bash
 composer require sandermuller/boost-core:^0.13
+
 
 
 
@@ -591,6 +615,7 @@ The dev-only `sandermuller/package-boost-php` constraint moved to `^0.15.0` (it 
 composer require sandermuller/boost-core:^0.13
 composer update sandermuller/project-boost-laravel sandermuller/boost-core
 php artisan project-boost:sync
+
 
 
 
@@ -850,6 +875,7 @@ declaration.
 
 
 
+
 ```
 Combined with the engine's 0.9.3 safety gate (which converts the thrown exception into a `SyncResult::error` rather than letting it propagate mid-write), the worst-case path is now: operator sees a clear message, no partial writes happen, recovery is straightforward.
 
@@ -919,6 +945,7 @@ Sync complete · wrote=1 · deleted=0 · unchanged=118
 
 
 
+
 ```
 Same output between "no divergence" and "divergence resolved by re-render" runs. Operator sees the re-render happened but gets no signal explaining the WHY — even when the engine emitted a parseable-divergence warning to the diagnostics channel.
 
@@ -934,6 +961,7 @@ Project Conventions
   ⚠ db-strategy: CLAUDE.md body diverged from boost.php's withConventions(); re-rendered from boost.php as canonical source.
 
 Sync complete · wrote=1 · deleted=0 · unchanged=118
+
 
 
 
@@ -1185,6 +1213,7 @@ PROJECT_BOOST_SUPPRESS_UPSTREAM=true
 
 
 
+
 ```
 A `CommandStarting` event listener intercepts the `boost:install` command and force-injects `--mcp` if it wasn't already passed. laravel/boost short-circuits its feature-selection step (the gate for its guideline + skill writers) when `--mcp` is set, so the user-visible outcome matches what `--mcp` would have produced.
 
@@ -1227,6 +1256,7 @@ If you want the defensive `suppress_upstream_writers` guardrail active, add `PRO
 
 ```bash
 php artisan project-boost:where
+
 
 
 
@@ -1372,6 +1402,7 @@ This package closes those gaps. laravel/boost still owns the MCP server (its cor
 
 ```bash
 composer require --dev sandermuller/project-boost-laravel
+
 
 
 
