@@ -324,7 +324,7 @@ final class SyncCommand extends Command
                 'boost.json is a symlink — left untouched. Remove it by hand if you want `boost:update` (and the `herd link` trigger) to stop re-seeding.',
             ),
             BoostJsonRemoval::FOREIGN => $this->line(
-                '  <fg=gray>kept boost.json — it records no agent list, so it is not laravel/boost\'s live install state (another tool\'s file, or one `boost:update` already refuses to act on).</>',
+                "  <fg=gray>kept boost.json — it records no agent list, so it is not laravel/boost's live install state (another tool's file, or one `boost:update` already refuses to act on).</>",
             ),
             BoostJsonRemoval::FAILED => $this->warn(
                 'Could not archive boost.json (permission or filesystem error). It is still in place, so `boost:update` will keep re-seeding.',
