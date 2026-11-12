@@ -10,6 +10,7 @@ use Rector\DeadCode\Rector\ClassMethod\RemoveUselessReturnTagRector;
 use Rector\Php81\Rector\FuncCall\NullToStrictStringFuncCallArgRector;
 use Rector\Privatization\Rector\ClassMethod\PrivatizeFinalClassMethodRector;
 use Rector\TypeDeclaration\Rector\ArrowFunction\AddArrowFunctionReturnTypeRector;
+use RectorLaravel\Rector\FuncCall\UnlinkFuncCallToFileFacadeDeleteRector;
 use RectorLaravel\Set\LaravelSetList;
 use RectorPest\Set\PestSetList;
 
@@ -64,4 +65,6 @@ return RectorConfig::configure()
         PrivatizeFinalClassMethodRector::class,
         RemoveUselessParamTagRector::class,
         RemoveUselessReturnTagRector::class,
+        // The File facade needs a booted app; unit tests and the bare-CLI path have none.
+        ...(class_exists(UnlinkFuncCallToFileFacadeDeleteRector::class) ? [UnlinkFuncCallToFileFacadeDeleteRector::class] : []),
     ]);

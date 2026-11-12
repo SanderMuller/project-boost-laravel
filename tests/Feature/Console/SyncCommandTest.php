@@ -13,6 +13,7 @@
  */
 
 use Illuminate\Support\Facades\File;
+use Laravel\Boost\Install\GuidelineAssist;
 
 $syncCwdRef = null;
 
@@ -601,4 +602,150 @@ it('omits the laravel/boost MCP tool sections when the mcp option is disabled', 
 
     expect($agentsMd)->toContain('# Laravel Boost')
         ->and($agentsMd)->not->toContain('search-docs');
+});
+
+/**
+ * A boost config with the given builder chain after `configure()`.
+ */
+function writeSyncBoostPhpChain(string $chain): void
+{
+    file_put_contents(base_path('boost.php'), <<<PHP
+        <?php declare(strict_types=1);
+
+        use SanderMuller\\BoostCore\\Config\\BoostConfig;
+        use SanderMuller\\BoostCore\\Enums\\Agent;
+
+        return BoostConfig::configure(){$chain};
+        PHP);
+}
+
+/**
+ * A laravel/boost skill with one companion file, written under the given
+ * `.ai` root at `<segment>/skill/<name>/`.
+ */
+function writeFixtureSkill(string $aiRoot, string $segment, string $name, string $entry = 'SKILL.md', string $body = 'Skill body.'): void
+{
+    $dir = "{$aiRoot}/{$segment}/skill/{$name}";
+    File::ensureDirectoryExists($dir . '/references');
+    file_put_contents("{$dir}/{$entry}", "---\nname: {$name}\ndescription: A fixture skill.\n---\n{$body}\n");
+    file_put_contents("{$dir}/references/notes.md", 'Companion notes.');
+}
+
+it('removes the @scoped markers and keeps the scoped body inline', function (): void {
+    // Blade has no `@scoped` directive, so without laravel/boost's own marker
+    // pass the markers reached the agent files as literal text.
+    file_put_contents(
+        base_path('tests-fixture-boost-ai/foundation.blade.php'),
+        "# Foundation\n\n@scoped(['app/Models/**'])\n## Model Rules\n\nSCOPED_GUIDELINE_BODY\n@endscoped\n",
+    );
+    writeFixtureSkill(
+        base_path('tests-fixture-boost-ai'),
+        'laravel',
+        'scoped-skill',
+        'SKILL.blade.php',
+        "@scoped(['tests/**'])\nSCOPED_SKILL_BODY\n@endscoped",
+    );
+    writeSyncBoostPhp();
+
+    $this->artisan('project-boost:sync')->assertSuccessful();
+
+    $guidance = (string) file_get_contents(base_path('AGENTS.md'));
+    $skill = (string) file_get_contents(base_path('.claude/skills/scoped-skill/SKILL.md'));
+
+    foreach (['@scoped', '@endscoped', '___SCOPED'] as $marker) {
+        expect($guidance)->not->toContain($marker)
+            ->and($skill)->not->toContain($marker);
+    }
+
+    expect($guidance)->toContain('SCOPED_GUIDELINE_BODY')
+        ->and($skill)->toContain('SCOPED_SKILL_BODY');
+});
+
+it('warns that path-scoped rules are not extracted when laravel/boost scoping is on', function (): void {
+    // laravel/boost moves `@scoped` blocks to `.ai/rules/boost/` when this is
+    // on. This package keeps them inline, and says so instead of acting as if
+    // the setting had an effect.
+    config(['boost.rules.scoped_guidelines' => true]);
+    file_put_contents(
+        base_path('tests-fixture-boost-ai/foundation.blade.php'),
+        "# Foundation\n\n@scoped(['app/Models/**'])\nSCOPED_GUIDELINE_BODY\n@endscoped\n",
+    );
+    writeSyncBoostPhp();
+
+    $this->artisan('project-boost:sync')
+        ->expectsOutputToContain('scoped_guidelines')
+        ->assertSuccessful();
+
+    expect(file_get_contents(base_path('AGENTS.md')))->toContain('SCOPED_GUIDELINE_BODY');
+});
+
+it('does not warn about scoping when no guideline has a scoped block', function (): void {
+    config(['boost.rules.scoped_guidelines' => true]);
+    writeSyncBoostPhp();
+
+    $this->artisan('project-boost:sync')
+        ->doesntExpectOutputToContain('scoped_guidelines')
+        ->assertSuccessful();
+});
+
+it('ships the Laravel Cloud skills only to a project that declares the cloud tag', function (): void {
+    // laravel/boost installs `.ai/deployments/skill/*` only when the operator
+    // picks its Cloud integration. Here the opt-in is the `cloud` tag.
+    writeFixtureSkill(base_path('tests-fixture-boost-ai'), 'deployments', 'cloud-deploy');
+
+    writeSyncBoostPhp();
+    $this->artisan('project-boost:sync')->assertSuccessful();
+    expect(file_exists(base_path('.claude/skills/cloud-deploy/SKILL.md')))->toBeFalse();
+
+    writeSyncBoostPhpChain("->withAgents([Agent::CLAUDE_CODE])->withTags(['cloud'])");
+    $this->artisan('project-boost:sync')->assertSuccessful();
+    expect(file_exists(base_path('.claude/skills/cloud-deploy/SKILL.md')))->toBeTrue();
+});
+
+it('renders the Cloud guidance line only when the cloud tag is declared', function (): void {
+    File::ensureDirectoryExists(base_path('tests-fixture-boost-ai/deployments'));
+    file_put_contents(
+        base_path('tests-fixture-boost-ai/deployments/core.blade.php'),
+        "# Deployment\n\n@if(\$assist->hasCloudEnabled())\nCLOUD_SKILL_LINE\n@endif\n",
+    );
+
+    writeSyncBoostPhp();
+    $this->artisan('project-boost:sync')->assertSuccessful();
+    expect(file_get_contents(base_path('AGENTS.md')))->not->toContain('CLOUD_SKILL_LINE');
+
+    writeSyncBoostPhpChain("->withAgents([Agent::CLAUDE_CODE])->withTags(['cloud'])");
+    $this->artisan('project-boost:sync')->assertSuccessful();
+    expect(file_get_contents(base_path('AGENTS.md')))->toContain('CLOUD_SKILL_LINE');
+})->skip(
+    // Reflection, not method_exists(): PHPStan reads the latter as always true
+    // or always false depending on the laravel/boost version it analyses.
+    fn (): bool => ! (new ReflectionClass(GuidelineAssist::class))->hasMethod('hasCloudEnabled'),
+    'laravel/boost before 2.8 has no Cloud integration.',
+);
+
+it("warns about laravel/boost's own exclude lists and names the boost.php keys", function (): void {
+    writeFixtureSkill(base_path('tests-fixture-boost-ai'), 'laravel', 'foo-skill');
+    config([
+        'boost.skills.exclude' => ['foo-skill', 'other-vendor-skill'],
+        'boost.guidelines.exclude' => ['foundation'],
+    ]);
+    writeSyncBoostPhp();
+
+    $this->artisan('project-boost:sync')
+        ->expectsOutputToContain('laravel/boost:foo-skill')
+        ->expectsOutputToContain('laravel/boost:foundation')
+        ->expectsOutputToContain('vendor/package:other-vendor-skill')
+        ->assertSuccessful();
+});
+
+it('does not warn about a laravel/boost exclude the boost config already covers', function (): void {
+    writeFixtureSkill(base_path('tests-fixture-boost-ai'), 'laravel', 'foo-skill');
+    config(['boost.skills.exclude' => ['foo-skill', 'other-vendor-skill']]);
+    writeSyncBoostPhpChain(
+        "->withAgents([Agent::CLAUDE_CODE])->withExcludedSkills(['laravel/boost:foo-skill', 'acme/widgets:other-vendor-skill'])",
+    );
+
+    $this->artisan('project-boost:sync')
+        ->doesntExpectOutputToContain('boost.skills.exclude')
+        ->assertSuccessful();
 });

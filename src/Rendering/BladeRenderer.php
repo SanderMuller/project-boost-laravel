@@ -21,6 +21,8 @@ use SanderMuller\BoostCore\Skills\Rendering\RenderContext;
  *    laravel/boost's bundled `pest-testing`, `livewire-development`,
  *    etc. templates reference.
  *  - `html_entity_decode` on the rendered output.
+ *  - `@scoped([...])` … `@endscoped` markers. Blade has no such directive, so
+ *    without laravel/boost's marker pass they reach the output as literal text.
  *
  * Constructor must remain parameterless (boost-core's plugin contract).
  * The `GuidelineAssist` resolver runs via Laravel's container at render
@@ -35,6 +37,8 @@ use SanderMuller\BoostCore\Skills\Rendering\RenderContext;
 final class BladeRenderer implements SkillRenderer
 {
     use RendersBladeGuidelines;
+
+    private int $scopedBlockCount = 0;
 
     #[Override]
     public function extensions(): array
@@ -71,15 +75,27 @@ final class BladeRenderer implements SkillRenderer
             );
         }
 
-        // Mirrors RendersBladeGuidelines::renderBladeFile but starts from a
-        // string instead of reading the file again. Keeps snippet protection
-        // + GuidelineAssist binding intact.
-        $content = $this->processBoostSnippets($raw);
-        $rendered = $this->renderContent($content, $ctx->sourcePath, []);
-        $rendered = strtr($rendered, $this->storedSnippets);
+        // laravel/boost's own string entry point: snippet protection, the
+        // `@scoped` marker pass, the Blade render, then snippet restore. Calling
+        // it, rather than re-sequencing those steps here, keeps this renderer in
+        // step with laravel/boost releases that change the order.
+        //
+        // `stripScoped: false` is laravel/boost's scoping-off output: the
+        // markers go, the block bodies stay inline. Its scoping-on mode moves
+        // the bodies to `.ai/rules/boost/`, which this package does not write —
+        // `scopedBlockCount()` lets the sync say so.
+        $result = $this->renderBladeStringWithScopedBlocks($raw, $ctx->sourcePath, [], false);
 
-        $this->storedSnippets = [];
+        $this->scopedBlockCount += count($result['blocks']);
 
-        return $rendered;
+        return $result['content'];
+    }
+
+    /**
+     * How many `@scoped` blocks this instance rendered inline so far.
+     */
+    public function scopedBlockCount(): int
+    {
+        return $this->scopedBlockCount;
     }
 }

@@ -147,7 +147,7 @@ final class ReconcileCommand extends Command
 
         $this->line('A markerless `boost sync` would wholesale-overwrite these files. Reconcile will:');
         $this->line('  • back up each file verbatim to <fg=cyan>.boost-reconcile/</>');
-        $this->line('  • capture hand-authored content (outside laravel/boost\'s marker) into <fg=cyan>.ai/guidelines/</> so sync re-derives it');
+        $this->line("  • capture hand-authored content (outside laravel/boost's marker) into <fg=cyan>.ai/guidelines/</> so sync re-derives it");
         $this->line('  • then run `project-boost:sync`');
         if ($this->hasLegacyFile($plan)) {
             $this->line('  • after the sync, replace the legacy <fg=cyan>CLAUDE.md</> with an `@AGENTS.md` import, so Claude Code reads the synced guidance');

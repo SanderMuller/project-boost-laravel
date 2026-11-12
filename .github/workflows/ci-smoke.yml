@@ -107,12 +107,20 @@ jobs:
             fail=1
           fi
 
+          # `@scoped([...])` / `@endscoped` are laravel/boost markers, not Blade
+          # directives, so Blade leaves them as text. The renderer removes them.
+          # Claude Code guidance is written to AGENTS.md since boost-core 1.12.
+          if grep -RnE '^[[:space:]]*@scoped\(|^[[:space:]]*@endscoped' AGENTS.md .claude/skills/ 2>/dev/null; then
+            echo "FAIL: literal @scoped marker leaked into generated output"
+            fail=1
+          fi
+
           # Note: NO check for `{{ $var }}` patterns. Blade's `@{{ ... }}`
           # escape syntax intentionally renders to literal `{{ ... }}` so
           # downstream tools (Livewire wire:* attrs, JS template engines)
           # can consume mustaches the post-render markdown legitimately
           # contains. A grep can't disambiguate that from a real leak.
-          # The two checks above are reliable: if Blade didn't render,
+          # The @php and @boostsnippet checks are reliable: if Blade didn't render,
           # `@php` and `@boostsnippet` would leak verbatim.
 
           if [ "$fail" -ne 0 ]; then
