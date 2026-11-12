@@ -4,8 +4,12 @@ namespace SanderMuller\ProjectBoostLaravel;
 
 use Laravel\Roster\ProjectScan;
 use SanderMuller\BoostCore\Agents\AgentTarget;
+use SanderMuller\BoostCore\Config\BoostConfig;
 use SanderMuller\BoostCore\Contracts\BoostWrapperContract;
 use SanderMuller\BoostCore\Enums\Agent;
+use SanderMuller\BoostCore\Skills\FrontmatterParser;
+use SanderMuller\ProjectBoostLaravel\Discovery\LaravelBoostSkillTags;
+use SanderMuller\ProjectBoostLaravel\Discovery\LaravelBoostTagManifest;
 use SanderMuller\ProjectBoostLaravel\Discovery\SkillAssetScope;
 use SanderMuller\ProjectBoostLaravel\Discovery\VersionResolver;
 use SplFileInfo;
@@ -38,17 +42,26 @@ use Throwable;
  *    `<skill-dir>/<name>/<asset-relative-path>`, so an unclaimed asset is
  *    reaped by the cleanup pass. Blade asset names are rewritten to `.md`,
  *    matching what `LaravelBoostAssetReader` emits;
- *  - the full skill universe is declared (pre tag-filter), because a NAME this
- *    sync didn't emit simply has no file to preserve, whereas under-declaring
- *    would let bare-CLI delete a real injected file. The contract is explicit
- *    that the filtered set isn't reproducible without the wrapper's runtime
- *    args, so the universe is the correct claim;
- *  - ASSETS, however, are claimed for the version-RESOLVED variant only. That
- *    asymmetry is deliberate: a claim exempts a path from stale cleanup for
- *    every sync, not just bare-CLI, and an obsolete variant's asset DOES exist
- *    on disk from an earlier sync. Claiming `pest/3`'s assets after the host
- *    upgrades to Pest 4 would strand them there forever. So this resolves the
- *    variant through the same `VersionResolver` the sync uses.
+ *  - a claim exempts a path from stale cleanup on EVERY sync, not just
+ *    bare-CLI. So the claim is the set the sync ships, not the universe: a
+ *    skill the project's boost config excludes (`withExcludedSkills()`) or
+ *    tag-filters out (`withTags()`, including the `cloud` opt-in of
+ *    {@see LaravelBoostSkillTags}) is not claimed. Over-claiming it would keep
+ *    the files of a skill that stopped shipping, and their manifest entries,
+ *    forever (boost-core's tag-filter pruner refuses a skill directory with
+ *    companion files);
+ *  - the filter needs the project's config, which the contract does not pass.
+ *    The wrapper loads it itself through boost-core's `@api`
+ *    `BoostConfig::load()`, the same resolution the engine uses without an
+ *    explicit `--config`. Any doubt falls back to the full universe — the
+ *    pre-filter claim, which never lets a sync delete a real injected file:
+ *    a config that does not load, or one whose agent list differs from the
+ *    `$activeAgents` the engine passed (a sign the engine read another file);
+ *  - ASSETS are claimed for the version-RESOLVED variant only, for the same
+ *    every-sync reason: an obsolete variant's asset DOES exist on disk from an
+ *    earlier sync. Claiming `pest/3`'s assets after the host upgrades to
+ *    Pest 4 would strand them there forever. So this resolves the variant
+ *    through the same `VersionResolver` the sync uses.
  *
  * Guideline files (`AGENTS.md` / `GEMINI.md` / …) are intentionally
  * NOT returned — they use ManagedRegion + operator-tracking, not wholesale
@@ -60,13 +73,15 @@ use Throwable;
  */
 final class BoostWrapper implements BoostWrapperContract
 {
+    private const string TAG_MANIFEST = __DIR__ . '/../resources/boost/laravel-boost-tags.yaml';
+
     /**
      * @param  list<string>  $activeAgents
      * @return list<string>
      */
     public static function injectedEmitPaths(string $projectRoot, array $activeAgents): array
     {
-        $skillFiles = self::injectedSkillPaths($projectRoot);
+        $skillFiles = self::injectedSkillPaths($projectRoot, self::projectConfig($projectRoot, $activeAgents));
         if ($skillFiles === []) {
             return [];
         }
@@ -98,12 +113,13 @@ final class BoostWrapper implements BoostWrapperContract
      * version-resolved sync emits.
      *
      * Each name maps to the asset relative paths of the ONE variant the sync
-     * emits — resolved through `VersionResolver`, not unioned across variants
-     * (see the class docblock for why the asymmetry with names is deliberate).
+     * emits — resolved through `VersionResolver`, not unioned across variants.
+     * With a trusted `$config`, a name that config excludes or tag-filters out
+     * is left out; a null config keeps every name (see the class docblock).
      *
      * @return array<string, list<string>>
      */
-    private static function injectedSkillPaths(string $projectRoot): array
+    private static function injectedSkillPaths(string $projectRoot, ?BoostConfig $config): array
     {
         $aiRoot = $projectRoot . '/vendor/laravel/boost/.ai';
         if (! is_dir($aiRoot)) {
@@ -122,15 +138,88 @@ final class BoostWrapper implements BoostWrapperContract
         }
 
         $resolver = new VersionResolver(self::projectScan($projectRoot));
+        $manifest = $config instanceof BoostConfig ? self::tagManifest() : null;
 
         $skills = [];
         foreach ($entriesByName as $name => $entries) {
             $entry = count($entries) === 1 ? $entries[0] : $resolver->pickSourcePath($entries);
 
+            if ($config instanceof BoostConfig && $manifest instanceof LaravelBoostTagManifest
+                && ! self::ships($config, $manifest, $entry, $aiRoot, $name)) {
+                continue;
+            }
+
             $skills[$name] = array_keys(self::assetPaths($entry));
         }
 
         return $skills;
+    }
+
+    /**
+     * The project's boost config when the claim may be filtered by it, or null
+     * to claim the full universe. Null on any load failure, and when the
+     * config's agents differ from the ones the engine passed: the engine then
+     * read a different config (an explicit `--config`), whose filters this
+     * wrapper cannot see. A throw must not escape — boost-core drops a throwing
+     * wrapper's whole claim, and the cleanup pass would then reap every
+     * injected file.
+     *
+     * @param  list<string>  $activeAgents
+     */
+    private static function projectConfig(string $projectRoot, array $activeAgents): ?BoostConfig
+    {
+        try {
+            $config = BoostConfig::load($projectRoot);
+        } catch (Throwable) {
+            return null;
+        }
+
+        $configAgents = array_map(static fn (Agent $agent): string => $agent->value, $config->agents);
+        $engineAgents = $activeAgents;
+        sort($configAgents);
+        sort($engineAgents);
+
+        return $configAgents === $engineAgents ? $config : null;
+    }
+
+    /**
+     * The sidecar tag manifest, or null (claim everything) if it cannot be read.
+     */
+    private static function tagManifest(): ?LaravelBoostTagManifest
+    {
+        try {
+            return LaravelBoostTagManifest::fromFile(self::TAG_MANIFEST);
+        } catch (Throwable) {
+            return null;
+        }
+    }
+
+    /**
+     * Whether the sync ships this skill: boost-core's tag-filter verdict
+     * (malformed tags, `withExcludedSkills()`, tag subset) on the tags
+     * `LaravelBoostAssetReader` gives it. The frontmatter is read from the
+     * unrendered entry; laravel/boost writes its frontmatter as plain YAML.
+     */
+    private static function ships(BoostConfig $config, LaravelBoostTagManifest $manifest, string $entry, string $aiRoot, string $name): bool
+    {
+        if ($config->excludesSkill('laravel/boost:' . $name)) {
+            return false;
+        }
+
+        $raw = @file_get_contents($entry);
+        if ($raw === false) {
+            return true;
+        }
+
+        try {
+            $frontmatter = (new FrontmatterParser())->parse($raw)->frontmatter;
+        } catch (Throwable) {
+            return true;
+        }
+
+        [$tags, $valid] = LaravelBoostSkillTags::resolve($entry, $aiRoot, $name, $frontmatter, $manifest);
+
+        return $valid && array_diff($tags, $config->tags) === [];
     }
 
     /**

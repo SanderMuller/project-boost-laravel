@@ -1,5 +1,38 @@
 # Upgrading
 
+## From 1.6 to 1.7
+
+### Changed
+
+- **The Laravel Cloud skills are opt-in.** `deploying-to-cloud` (every skill
+  under laravel/boost's `.ai/deployments/skill/`) shipped to every project.
+  laravel/boost itself installs it only when you pick its Cloud integration.
+  It now ships only when your boost config declares the `cloud` tag:
+
+  ```php
+  ->withTags([Tag::Laravel, Tag::Php, 'cloud'])
+  ```
+
+  Without the tag, the next sync removes the skill from the agent directories.
+  The tag also turns on the Cloud line in the `deployments-core` guideline
+  (laravel/boost 2.8 and later).
+
+- **A skill you exclude or tag-filter out is now removed.** Before, a skill that
+  stopped shipping after an earlier sync kept its files and manifest entries,
+  when it had companion files (`references/`, `rules/`). The next sync deletes
+  them.
+
+- **`@scoped` markers no longer leak.** laravel/boost's `@scoped([...])` and
+  `@endscoped` lines reached `AGENTS.md` as literal text. The sync now removes
+  them and keeps the block content inline. If you set
+  `boost.rules.scoped_guidelines`, the sync warns that it does not extract
+  those blocks to `.ai/rules/boost/`.
+
+- **laravel/boost's exclude lists get a warning.** `boost.skills.exclude` and
+  `boost.guidelines.exclude` in `config/boost.php` never applied to this sync.
+  The sync now names each entry and the `boost.php` key to use. Move the entries
+  to `withExcludedSkills()` / `withExcludedGuidelines()` to silence it.
+
 ## From 1.4 to 1.5
 
 ### Changed

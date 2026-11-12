@@ -3,7 +3,6 @@
 namespace SanderMuller\ProjectBoostLaravel\Discovery;
 
 use SanderMuller\BoostCore\Contracts\SkillRenderer;
-use SanderMuller\BoostCore\Skills\BoostTags;
 use SanderMuller\BoostCore\Skills\FrontmatterParser;
 use SanderMuller\BoostCore\Skills\Rendering\RenderContext;
 use SanderMuller\BoostCore\Skills\Skill;
@@ -29,7 +28,9 @@ use Throwable;
  *    Blade asset is emitted with its extension rewritten to `.md`, because
  *    the entry body links `rules/foo.md`, not `rules/foo.blade.php`.
  *  - Tags are layered: frontmatter `metadata.boost-tags` wins; otherwise the
- *    sidecar manifest fills in.
+ *    sidecar manifest fills in. A skill under an integration-gated directory
+ *    (`.ai/deployments/skill/`) also carries that integration's opt-in tag
+ *    ({@see LaravelBoostSkillTags}).
  *
  * Skills feed into boost-core's SyncEngine via the `injectedVendorSkills`
  * seam — they bypass `SkillLoader`'s file walker entirely, which is why the
@@ -149,16 +150,15 @@ final class LaravelBoostAssetReader
         $name = $this->skillNameFromPath($file);
         $frontmatter = $parsed->frontmatter;
 
-        // Author-declared `metadata.boost-tags` win — tokenized + validated via
-        // boost-core's canonical BoostTags so a malformed value fails closed
-        // (ships nowhere), matching the engine. Otherwise fall back to the
-        // sidecar manifest (always-valid normalized strings).
-        if (BoostTags::declaresTags($frontmatter)) {
-            [$tags, $tagsValid] = BoostTags::parse($frontmatter);
-        } else {
-            $tags = $this->tagManifest->tagsFor($name);
-            $tagsValid = true;
-        }
+        // Frontmatter tags, else the sidecar, plus the opt-in tag of an
+        // integration-gated directory — see LaravelBoostSkillTags.
+        [$tags, $tagsValid] = LaravelBoostSkillTags::resolve(
+            $file->getPathname(),
+            $this->laravelBoostAiRoot,
+            $name,
+            $frontmatter,
+            $this->tagManifest,
+        );
 
         $description = isset($frontmatter['description']) && is_string($frontmatter['description'])
             ? $frontmatter['description']

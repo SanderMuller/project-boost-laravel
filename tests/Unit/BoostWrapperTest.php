@@ -1,7 +1,12 @@
 <?php declare(strict_types=1);
 
 use SanderMuller\BoostCore\Contracts\BoostWrapperContract;
+use SanderMuller\BoostCore\Sync\BoostSync;
+use SanderMuller\BoostCore\Sync\InstalledPackages;
+use SanderMuller\BoostCore\Sync\PackageInfo;
 use SanderMuller\ProjectBoostLaravel\BoostWrapper;
+use SanderMuller\ProjectBoostLaravel\Discovery\LaravelBoostAssetReader;
+use SanderMuller\ProjectBoostLaravel\Discovery\LaravelBoostTagManifest;
 
 /**
  * Build a fake project root with laravel/boost skills under
@@ -213,3 +218,122 @@ test('a host whose package scan throws still claims its skill paths', function (
 
     expect($paths)->toBe(['.claude/skills/pest-testing/SKILL.md']);
 });
+
+/**
+ * Write a root `boost.php` into a wrapper fixture root.
+ */
+function writeWrapperBoostPhp(string $root, string $chain): void
+{
+    file_put_contents("{$root}/boost.php", <<<PHP
+        <?php declare(strict_types=1);
+
+        use SanderMuller\\BoostCore\\Config\\BoostConfig;
+        use SanderMuller\\BoostCore\\Enums\\Agent;
+
+        return BoostConfig::configure(){$chain};
+        PHP);
+}
+
+test('does not claim a skill the boost config excludes', function (): void {
+    // A claim exempts a path from stale cleanup on every sync. Claiming an
+    // excluded skill keeps its old files, and its manifest entries, forever.
+    $root = wrapperProjectRoot([
+        'pest/pest-testing' => 'blade.php',
+        'folio/folio-routing' => 'md',
+    ]);
+    writeWrapperBoostPhp($root, "->withAgents([Agent::CLAUDE_CODE])->withExcludedSkills(['laravel/boost:folio-routing'])");
+
+    expect(BoostWrapper::injectedEmitPaths($root, ['claude-code']))
+        ->toBe(['.claude/skills/pest-testing/SKILL.md']);
+});
+
+test('does not claim a skill the tag filter drops', function (): void {
+    // folio-routing carries `laravel folio` from the sidecar manifest, so a
+    // project that declares only `laravel` does not ship it.
+    $root = wrapperProjectRoot([
+        'pest/pest-testing' => 'blade.php',
+        'folio/folio-routing' => 'md',
+    ]);
+    writeWrapperBoostPhp($root, "->withAgents([Agent::CLAUDE_CODE])->withTags(['laravel'])");
+
+    expect(BoostWrapper::injectedEmitPaths($root, ['claude-code']))
+        ->toBe(['.claude/skills/pest-testing/SKILL.md']);
+});
+
+test('claims a Laravel Cloud skill only when the project declares the cloud tag', function (): void {
+    $root = wrapperProjectRoot(['deployments/cloud-deploy' => 'md']);
+
+    writeWrapperBoostPhp($root, '->withAgents([Agent::CLAUDE_CODE])');
+    expect(BoostWrapper::injectedEmitPaths($root, ['claude-code']))->toBeEmpty();
+
+    writeWrapperBoostPhp($root, "->withAgents([Agent::CLAUDE_CODE])->withTags(['cloud'])");
+    expect(BoostWrapper::injectedEmitPaths($root, ['claude-code']))
+        ->toBe(['.claude/skills/cloud-deploy/SKILL.md']);
+});
+
+test('claims every skill when the boost config cannot be loaded', function (): void {
+    // Under-claiming lets a bare sync reap real files, so any doubt about the
+    // config falls back to the full set.
+    $root = wrapperProjectRoot(['folio/folio-routing' => 'md']);
+    file_put_contents("{$root}/boost.php", '<?php throw new RuntimeException("broken");');
+
+    expect(BoostWrapper::injectedEmitPaths($root, ['claude-code']))
+        ->toBe(['.claude/skills/folio-routing/SKILL.md']);
+});
+
+test('claims every skill when the loaded config is not the one the engine used', function (): void {
+    // The engine can run with an explicit config file the wrapper cannot see.
+    // An agent list that differs from the one the engine passed means the
+    // wrapper read a different config, so it cannot trust that config's filters.
+    $root = wrapperProjectRoot(['folio/folio-routing' => 'md']);
+    writeWrapperBoostPhp($root, "->withAgents([Agent::CURSOR])->withExcludedSkills(['laravel/boost:folio-routing'])");
+
+    expect(BoostWrapper::injectedEmitPaths($root, ['claude-code']))
+        ->toBe(['.claude/skills/folio-routing/SKILL.md']);
+});
+
+test('a sync removes the files and manifest entries of a skill that stops shipping', function (string $chainAfter): void {
+    // End to end through boost-core: the engine discovers this wrapper, and its
+    // claim must match what the sync ships. A claimed path is exempt from stale
+    // cleanup, and boost-core's tag-filter pruner refuses a skill directory with
+    // a companion file, so an over-claim kept these files forever.
+    $root = wrapperProjectRoot([]);
+    $aiRoot = "{$root}/vendor/laravel/boost/.ai";
+    foreach (['laravel/skill/kept-skill', 'deployments/skill/dropped-skill'] as $relative) {
+        mkdir("{$aiRoot}/{$relative}/references", 0o755, true);
+        file_put_contents("{$aiRoot}/{$relative}/SKILL.md", "---\nname: " . basename($relative) . "\ndescription: A fixture skill.\n---\nBody.");
+        file_put_contents("{$aiRoot}/{$relative}/references/notes.md", 'Companion notes.');
+    }
+
+    $sync = static function () use ($root, $aiRoot): void {
+        $skills = (new LaravelBoostAssetReader($aiRoot, new LaravelBoostTagManifest()))->readSkills();
+        $packages = new InstalledPackages([
+            'sandermuller/project-boost-laravel' => new PackageInfo(
+                name: 'sandermuller/project-boost-laravel',
+                version: 'dev-main',
+                installPath: dirname(__DIR__, 2),
+            ),
+        ]);
+
+        $result = BoostSync::make($packages)->sync($root, injectedVendorSkills: ['laravel/boost' => $skills]);
+
+        expect($result->hasErrors())->toBeFalse();
+    };
+
+    writeWrapperBoostPhp($root, "->withAgents([Agent::CLAUDE_CODE])->withTags(['cloud'])");
+    $sync();
+
+    expect(file_exists("{$root}/.claude/skills/dropped-skill/references/notes.md"))->toBeTrue()
+        ->and(file_get_contents("{$root}/.boost/manifest.json"))->toContain('dropped-skill');
+
+    writeWrapperBoostPhp($root, $chainAfter);
+    $sync();
+
+    expect(file_exists("{$root}/.claude/skills/dropped-skill/SKILL.md"))->toBeFalse()
+        ->and(file_exists("{$root}/.claude/skills/dropped-skill/references/notes.md"))->toBeFalse()
+        ->and(file_exists("{$root}/.claude/skills/kept-skill/references/notes.md"))->toBeTrue()
+        ->and(file_get_contents("{$root}/.boost/manifest.json"))->not->toContain('dropped-skill');
+})->with([
+    'excluded' => ["->withAgents([Agent::CLAUDE_CODE])->withTags(['cloud'])->withExcludedSkills(['laravel/boost:dropped-skill'])"],
+    'tag-filtered' => ['->withAgents([Agent::CLAUDE_CODE])'],
+]);

@@ -76,6 +76,41 @@ return BoostConfig::configure()
 Every `BoostConfig` method, the tag vocabulary, and the auto-sync hook are in the
 [configuration guide](https://sandermuller.github.io/boost-core/packages/project-boost-laravel/configuration).
 
+A boost config applies to its own project root only. The sync reads `boost.php`
+or `.config/boost.php` in the directory it runs in. A monorepo subproject that
+runs its own `project-boost:sync` needs its own config, because it does not
+inherit the one at the repository root.
+
+### Excluding `laravel/boost` skills and guidelines
+
+This package injects `laravel/boost`'s bundled skills and guidelines under the
+vendor key `laravel/boost`. Exclude one by that key:
+
+```php
+return BoostConfig::configure()
+    ->withAgents([Agent::CLAUDE_CODE])
+    ->withExcludedSkills(['laravel/boost:fluxui-development'])
+    ->withExcludedGuidelines(['laravel/boost:herd-core', 'laravel/boost:livewire-3-core']);
+```
+
+- A skill key is `laravel/boost:<skill-name>`. The name is the skill's directory name.
+- A guideline key is `laravel/boost:<name>`. The name is the guideline's path under
+  `vendor/laravel/boost/.ai/`, without the extension and with `-` for `/`:
+  `livewire/core.blade.php` is `livewire-core`, `laravel/12/core.blade.php` is
+  `laravel-12-core`, and `foundation.blade.php` is `foundation`.
+- `project-boost:where` lists every injected name.
+
+The exclude lists in `laravel/boost`'s own `config/boost.php`
+(`boost.skills.exclude`, `boost.guidelines.exclude`) do not apply here. The sync
+warns about each entry and names the key to use in `boost.php`.
+
+### Laravel Cloud skills
+
+`laravel/boost` installs its Laravel Cloud skills (`deploying-to-cloud`) only
+when you pick the Cloud integration in `boost:install`. Here, the `cloud` tag
+opts in: `->withTags([Tag::Laravel, 'cloud'])`. The same tag turns on the Cloud
+line in the `deployments-core` guideline.
+
 ## Commands
 
 | Command | Does |

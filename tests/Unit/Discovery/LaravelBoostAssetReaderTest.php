@@ -5,6 +5,7 @@ use SanderMuller\BoostCore\Skills\Rendering\RenderContext;
 use SanderMuller\BoostCore\Skills\Skill;
 use SanderMuller\BoostCore\Skills\SkillAsset;
 use SanderMuller\ProjectBoostLaravel\Discovery\LaravelBoostAssetReader;
+use SanderMuller\ProjectBoostLaravel\Discovery\LaravelBoostSkillTags;
 use SanderMuller\ProjectBoostLaravel\Discovery\LaravelBoostTagManifest;
 
 function makeFixtureRoot(): string
@@ -432,3 +433,34 @@ test('an unreadable asset is skipped rather than emitted empty over valid conten
         rmFixtureRoot($root);
     }
 })->skip(fn (): bool => posix_geteuid() === 0, 'root bypasses file permissions');
+
+test('adds the cloud opt-in tag to every skill under deployments/skill, on top of its own tags', function (): void {
+    // laravel/boost installs `.ai/deployments/skill/*` only behind its Cloud
+    // integration, whatever a skill declares, so the gate covers the directory.
+    $root = makeFixtureRoot();
+    try {
+        writeSkill($root, 'deployments', 'plain-deploy', "---\nname: plain-deploy\ndescription: D.\n---\nbody");
+        writeSkill($root, 'deployments', 'tagged-deploy', "---\nname: tagged-deploy\ndescription: D.\nmetadata:\n  boost-tags: laravel\n---\nbody");
+        writeSkill($root, 'laravel', 'other-skill', "---\nname: other-skill\ndescription: O.\n---\nbody");
+
+        $tags = [];
+        foreach ((new LaravelBoostAssetReader($root, new LaravelBoostTagManifest()))->readSkills() as $skill) {
+            $tags[$skill->name] = $skill->tags;
+        }
+
+        expect($tags)->toBe([
+            'plain-deploy' => ['cloud'],
+            'tagged-deploy' => ['laravel', 'cloud'],
+            'other-skill' => [],
+        ]);
+    } finally {
+        rmFixtureRoot($root);
+    }
+});
+
+test('finds the integration directory when the .ai root ends in a separator', function (): void {
+    expect(LaravelBoostSkillTags::integrationTag('/app/vendor/laravel/boost/.ai/deployments/skill/x/SKILL.md', '/app/vendor/laravel/boost/.ai/'))
+        ->toBe('cloud')
+        ->and(LaravelBoostSkillTags::integrationTag('/app/vendor/laravel/boost/.ai/laravel/skill/x/SKILL.md', '/app/vendor/laravel/boost/.ai'))
+        ->toBeNull();
+});

@@ -17,11 +17,13 @@ use SanderMuller\BoostCore\Sync\WrittenFile;
 use SanderMuller\ProjectBoostLaravel\Coexistence\BoostJsonOutcome;
 use SanderMuller\ProjectBoostLaravel\Coexistence\BoostJsonRemoval;
 use SanderMuller\ProjectBoostLaravel\Coexistence\BoostJsonRemover;
+use SanderMuller\ProjectBoostLaravel\Coexistence\LaravelBoostExcludes;
 use SanderMuller\ProjectBoostLaravel\Console\Concerns\GatesGuidelines;
 use SanderMuller\ProjectBoostLaravel\Console\Concerns\LoadsBoostConfig;
 use SanderMuller\ProjectBoostLaravel\Console\Concerns\ResolvesAiRoot;
 use SanderMuller\ProjectBoostLaravel\Discovery\LaravelBoostAssetReader;
 use SanderMuller\ProjectBoostLaravel\Discovery\LaravelBoostGuidelineReader;
+use SanderMuller\ProjectBoostLaravel\Discovery\LaravelBoostSkillTags;
 use SanderMuller\ProjectBoostLaravel\Discovery\LaravelBoostTagManifest;
 use SanderMuller\ProjectBoostLaravel\Discovery\VersionResolver;
 use SanderMuller\ProjectBoostLaravel\Reconcile\GuidanceReconciler;
@@ -66,7 +68,15 @@ final class SyncCommand extends Command
 
     public function handle(): int
     {
-        $this->configureGuidelineAssist();
+        // The config is read before rendering: its tags decide laravel/boost's
+        // integration flags (`cloud`), which the templates read through `$assist`.
+        $projectRoot = base_path();
+        $config = $this->loadBoostConfigOrHint($projectRoot);
+        if (! $config instanceof BoostConfig) {
+            return self::FAILURE;
+        }
+
+        $this->configureGuidelineAssist($config);
 
         $blade = new BladeRenderer();
         $manifestPath = dirname(__DIR__, 2) . '/resources/boost/laravel-boost-tags.yaml';
@@ -140,41 +150,104 @@ final class SyncCommand extends Command
 
         $guidelines = array_values($guidelinesByName);
 
+        $this->warnAboutLaravelBoostExcludes($config, $skills, $guidelines);
+
         if ($this->option('dry-run')) {
-            return $this->reportDryRun($skills, $guidelines);
+            return $this->reportDryRun($config, $blade, $skills, $guidelines);
         }
 
-        return $this->runSync($skills, $guidelines);
+        return $this->runSync($config, $blade, $skills, $guidelines);
     }
 
     /**
-     * laravel/boost's templates gate sections on `$assist->hasMcpEnabled()` and
-     * `hasSkillsEnabled()`, which only its own installer sets. Mutate (not
-     * replace) the config to keep what an in-process `boost:install` set, and
-     * rebind it: outside local/debug laravel/boost binds no singleton, so each
-     * resolve would autowire a fresh default. Forget the assist so it rebuilds.
+     * laravel/boost's templates gate sections on `$assist->hasMcpEnabled()`,
+     * `hasSkillsEnabled()` and (>= 2.8) `hasCloudEnabled()`, which only its own
+     * installer sets. Mutate (not replace) the config to keep what an in-process
+     * `boost:install` set, and rebind it: outside local/debug laravel/boost
+     * binds no singleton, so each resolve would autowire a fresh default.
+     * Forget the assist so it rebuilds.
+     *
+     * Cloud follows the same `cloud` tag that ships the Cloud skills, so the
+     * guideline line that points at those skills renders only when they ship.
      */
-    private function configureGuidelineAssist(): void
+    private function configureGuidelineAssist(BoostConfig $config): void
     {
         $guidelineConfig = resolve(GuidelineConfig::class);
         $guidelineConfig->hasMcp = (bool) config('project-boost-laravel.mcp', true);
         $guidelineConfig->hasSkills = true;
+
+        // `usesCloud` exists from laravel/boost 2.8; the supported floor is 2.5.
+        if (property_exists($guidelineConfig, 'usesCloud')) {
+            $guidelineConfig->usesCloud = $config->hasTag(LaravelBoostSkillTags::CLOUD_TAG);
+        }
 
         app()->instance(GuidelineConfig::class, $guidelineConfig);
         app()->forgetInstance(GuidelineAssist::class);
     }
 
     /**
+     * Point at the boost-config home of each entry in laravel/boost's own
+     * exclude lists — see {@see LaravelBoostExcludes} for why the sync warns
+     * rather than honouring them.
+     *
      * @param  list<Skill>  $skills
      * @param  list<Guideline>  $guidelines
      */
-    private function runSync(array $skills, array $guidelines): int
+    private function warnAboutLaravelBoostExcludes(BoostConfig $config, array $skills, array $guidelines): void
+    {
+        $advice = LaravelBoostExcludes::fromConfig(
+            config('boost.skills.exclude', []),
+            config('boost.guidelines.exclude', []),
+        )->advice(
+            $config,
+            array_values(array_unique(array_map(static fn (Skill $skill): string => $skill->name, $skills))),
+            array_map(static fn (Guideline $guideline): string => $guideline->name, $guidelines),
+        );
+
+        if ($advice === []) {
+            return;
+        }
+
+        $this->warn(
+            "laravel/boost's config/boost.php exclude lists do not apply to this sync. Your boost config "
+            . '(boost.php) selects what ships. Move these entries there:',
+        );
+
+        foreach ($advice as $line) {
+            $this->line($line);
+        }
+    }
+
+    /**
+     * laravel/boost's scoping-on mode moves `@scoped` blocks out of the
+     * guidelines into `.ai/rules/boost/`. This package does not write those
+     * rule files, so the blocks stay inline. Say so only when the setting is
+     * on and a block was actually rendered, since the sync runs from composer
+     * hooks.
+     */
+    private function warnAboutScopedGuidelines(BladeRenderer $blade): void
+    {
+        $scopingOn = (bool) config('boost.rules.enabled', true)
+            && (bool) config('boost.rules.scoped_guidelines', false);
+
+        if (! $scopingOn || $blade->scopedBlockCount() === 0) {
+            return;
+        }
+
+        $this->warn(sprintf(
+            'boost.rules.scoped_guidelines is on, but project-boost:sync does not extract path-scoped rules to '
+            . '.ai/rules/boost/. %d `@scoped` block(s) stay inline in the guidance and skills.',
+            $blade->scopedBlockCount(),
+        ));
+    }
+
+    /**
+     * @param  list<Skill>  $skills
+     * @param  list<Guideline>  $guidelines
+     */
+    private function runSync(BoostConfig $config, BladeRenderer $blade, array $skills, array $guidelines): int
     {
         $projectRoot = base_path();
-        $config = $this->loadBoostConfigOrHint($projectRoot);
-        if (! $config instanceof BoostConfig) {
-            return self::FAILURE;
-        }
 
         $this->warnIfForeignSeeded($config, $projectRoot);
 
@@ -184,9 +257,10 @@ final class SyncCommand extends Command
             count($guidelines),
         ));
 
-        $result = $this->invokeSyncEngine($projectRoot, $skills, $guidelines, checkOnly: false);
+        $result = $this->invokeSyncEngine($projectRoot, $blade, $skills, $guidelines, checkOnly: false);
 
         $exit = $this->renderResult($result, checkOnly: false);
+        $this->warnAboutScopedGuidelines($blade);
 
         // Only after a clean sync: the state file describes emission this command
         // has now taken over. On a failed sync laravel/boost's own path stays the
@@ -351,13 +425,9 @@ final class SyncCommand extends Command
      * @param  list<Skill>  $skills
      * @param  list<Guideline>  $guidelines
      */
-    private function reportDryRun(array $skills, array $guidelines): int
+    private function reportDryRun(BoostConfig $config, BladeRenderer $blade, array $skills, array $guidelines): int
     {
         $projectRoot = base_path();
-        $config = $this->loadBoostConfigOrHint($projectRoot);
-        if (! $config instanceof BoostConfig) {
-            return self::FAILURE;
-        }
 
         if ($this->option('show-untagged')) {
             $this->renderInjectionTables($skills, $guidelines);
@@ -370,9 +440,10 @@ final class SyncCommand extends Command
             count($guidelines),
         ));
 
-        $result = $this->invokeSyncEngine($projectRoot, $skills, $guidelines, checkOnly: true);
+        $result = $this->invokeSyncEngine($projectRoot, $blade, $skills, $guidelines, checkOnly: true);
 
         $exit = $this->renderResult($result, checkOnly: true);
+        $this->warnAboutScopedGuidelines($blade);
 
         if ($exit === self::SUCCESS) {
             $this->reportBoostJsonRemoval($projectRoot, $config, dryRun: true, notTakenOver: $this->takeoverGap($skills, $guidelines, $result));
@@ -385,7 +456,7 @@ final class SyncCommand extends Command
      * @param  list<Skill>  $skills
      * @param  list<Guideline>  $guidelines
      */
-    private function invokeSyncEngine(string $projectRoot, array $skills, array $guidelines, bool $checkOnly): SyncResult
+    private function invokeSyncEngine(string $projectRoot, BladeRenderer $blade, array $skills, array $guidelines, bool $checkOnly): SyncResult
     {
         return BoostSync::make()->sync(
             projectRoot: $projectRoot,
@@ -400,8 +471,9 @@ final class SyncCommand extends Command
             // dispatcher is first-registered-wins, so a host that registered its
             // own `.blade.php` renderer keeps it (no collision). This runs on the
             // artisan path where the container is bootstrapped, so the renderer's
-            // container guard is satisfied.
-            extraSkillRenderers: [new BladeRenderer()],
+            // container guard is satisfied. The same instance the readers used,
+            // so its `@scoped` block count covers host guidelines too.
+            extraSkillRenderers: [$blade],
             injectedVendorGuidelines: ['laravel/boost' => $guidelines],
         );
     }
